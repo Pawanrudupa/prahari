@@ -30,19 +30,18 @@ def test_ws_query_token_rejected() -> None:
         pass
 
 
-@pytest.mark.asyncio
-async def test_ws_authenticated_connection_and_event_delivery(
+def test_ws_authenticated_connection_and_event_delivery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Connecting with single-use ticket receives events and prevents replay."""
-    monkeypatch.setattr("app.core.redis.redis_client", None)
-    app = create_app()
-    ticket = await create_ws_ticket(user_payload={"role": "admin"}, ttl_seconds=30)
+    import asyncio
 
-    with (
-        TestClient(app) as client,
-        client.websocket_connect(f"/ws/events?ticket={ticket}") as websocket,
-    ):
+    monkeypatch.setattr("app.auth.ticket.redis_client", None)
+    ticket = asyncio.run(create_ws_ticket(user_payload={"role": "admin"}, ttl_seconds=30))
+    app = create_app()
+
+    client = TestClient(app)
+    with client.websocket_connect(f"/ws/events?ticket={ticket}") as websocket:
         # 1. Send client ping and verify pong
         websocket.send_text(json.dumps({"type": "ping"}))
         resp = json.loads(websocket.receive_text())
@@ -50,8 +49,9 @@ async def test_ws_authenticated_connection_and_event_delivery(
 
     # 2. Replay attempt with same ticket is rejected
     with (
-        TestClient(app) as client,
         pytest.raises(WebSocketDisconnect),
         client.websocket_connect(f"/ws/events?ticket={ticket}"),
     ):
         pass
+
+
