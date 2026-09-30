@@ -1,0 +1,10 @@
+{
+  "name": "prahari-monorepo",
+  "private": true,
+  "scripts": {
+    "web:dev": "pnpm --filter @prahari/web dev",
+    "web:build": "pnpm --filter @prahari/web build",
+    "web:test": "pnpm --filter @prahari/web test",
+    "web:type-check": "pnpm --filter @prahari/web type-check"
+  }
+}

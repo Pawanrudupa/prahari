@@ -1,0 +1,41 @@
+policy: customer-data-guard
+version: 1
+defaults:
+  decision: deny
+rules:
+  - id: R1-allow-read-tickets
+    effect: allow
+    agent:
+      role: support
+    tool: crm.read_ticket
+
+  - id: R2-redact-pii-outbound
+    effect: redact
+    tool: email.send
+    when:
+      data_classes_any:
+        - aadhaar
+        - pan
+        - phone
+        - email
+    redact:
+      - aadhaar
+      - pan
+
+  - id: R3-escalate-bulk-export
+    effect: escalate
+    tool: crm.export
+    when:
+      rows_gt: 100
+
+  - id: R4-deny-untrusted-instruction
+    effect: deny
+    when:
+      injection_score_gte: 0.8
+
+limits:
+  - id: L1
+    per: agent
+    max_calls_per_min: 60
+    max_repeat_same_call: 5
+    max_spend_inr_per_day: 500

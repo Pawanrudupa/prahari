@@ -26,3 +26,34 @@ docs/               Spec (read these first)
 
 ## Read order
 1. `AGENTS.md` (rules)  2. `docs/02-PRD.md`  3. `docs/03-ARCHITECTURE.md`  4. `docs/04-DESIGN-3D-UX.md`  5. `docs/05-API-AND-DATA-MODEL.md`  6. `docs/06-ROADMAP.md`  7. `docs/01-RESEARCH.md` (background)
+
+## Quick start
+
+```bash
+# Clone
+git clone https://github.com/Pawanrudupa/prahari.git
+cd prahari
+
+# Copy env
+cp .env.example .env
+
+# Start everything
+docker compose up --build
+
+# API: http://localhost:8000/health
+# Web: http://localhost:5173
+```
+
+## Local dev (without Docker)
+
+```bash
+# API
+cd services/api
+uv sync --dev
+uv run alembic upgrade head
+uv run uvicorn app.main:create_app --factory --reload
+
+# Web (in another terminal, from repo root)
+pnpm install
+pnpm --filter @prahari/web dev
+```

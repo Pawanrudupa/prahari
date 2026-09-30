@@ -11,3 +11,16 @@ dist/
 .ruff_cache/
 *.log
 data/
+
+# Docker
+pgdata/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+*.egg-info/
+*.tsbuildinfo
