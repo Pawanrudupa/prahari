@@ -56,7 +56,10 @@ jobs:
       - name: Run Alembic migrations
         run: uv run alembic upgrade head
       - name: Test (pytest against real Postgres & Redis)
-        run: uv run pytest -v --tb=short -rA
+        run: |
+          set -o pipefail
+          uv run pytest -v --tb=short -rA 2>&1 | tee pytest_report.log || (echo '```' >> $GITHUB_STEP_SUMMARY && cat pytest_report.log >> $GITHUB_STEP_SUMMARY && echo '```' >> $GITHUB_STEP_SUMMARY && exit 1)
+          echo '```' >> $GITHUB_STEP_SUMMARY && cat pytest_report.log >> $GITHUB_STEP_SUMMARY && echo '```' >> $GITHUB_STEP_SUMMARY
       - name: "Gateway Latency Benchmark (Target: p95 < 50ms)"
         run: uv run python benchmarks/bench_gateway.py
 
