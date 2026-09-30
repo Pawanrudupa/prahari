@@ -73,7 +73,7 @@ async def create_tool(
         id=tool.id,
         name=tool.name,
         server=tool.server,
-        tool_schema=tool.schema_json,
+        schema_json=tool.schema_json,
         sensitivity=tool.sensitivity,
     )
 
@@ -94,7 +94,7 @@ async def list_tools(
             id=t.id,
             name=t.name,
             server=t.server,
-            tool_schema=t.schema_json,
+            schema_json=t.schema_json,
             sensitivity=t.sensitivity,
         )
         for t in tools

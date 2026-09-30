@@ -8,6 +8,7 @@ import logging
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from app.auth.session import verify_session_token
+from app.auth.ticket import consume_ws_ticket
 from app.core.config import settings
 from app.events.bus import subscribe_local_events
 
@@ -16,38 +17,40 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])
 
 
-def _authenticate_ws(token: str | None) -> bool:
-    """Validate token from query string (?token=...) or header."""
-    if not token:
+def _authenticate_header(auth_header: str | None) -> bool:
+    """Validate token from Authorization header only (for non-browser clients)."""
+    if not auth_header or not auth_header.lower().startswith("bearer "):
         return False
-    # Direct admin token match
+    token = auth_header[7:].strip()
     import hmac
 
-    if hmac.compare_digest(token.strip(), settings.ADMIN_TOKEN):
+    if hmac.compare_digest(token, settings.ADMIN_TOKEN):
         return True
-    # Signed session token match
-    return verify_session_token(token.strip()) is not None
+    return verify_session_token(token) is not None
 
 
 @router.websocket("/ws/events")
 async def websocket_events_endpoint(
     websocket: WebSocket,
-    token: str | None = Query(default=None),
+    ticket: str | None = Query(default=None),
 ) -> None:
     """
     Real-time WebSocket event stream.
-    Authenticates operator via ?token=<session_or_admin_token>.
-    Emits events according to the docs/05 envelope with bounded client queues.
+    Authenticates operator via short-lived single-use ?ticket=<prh_wstk_...>.
+    Tokens are strictly prohibited from query strings to prevent log leakage.
     """
     # 1. Authenticate before accepting
-    # Try query param first, then Authorization header if present
-    auth_token = token
-    if not auth_token:
+    authenticated = False
+    if ticket:
+        # Validate and immediately consume single-use ticket
+        payload = await consume_ws_ticket(ticket)
+        authenticated = payload is not None
+    else:
+        # Fall back to Authorization header for programmatic test clients
         auth_header = websocket.headers.get("authorization")
-        if auth_header and auth_header.lower().startswith("bearer "):
-            auth_token = auth_header[7:].strip()
+        authenticated = _authenticate_header(auth_header)
 
-    if not _authenticate_ws(auth_token):
+    if not authenticated:
         await websocket.close(code=1008, reason="Authentication failed")
         return
 

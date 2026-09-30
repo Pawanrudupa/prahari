@@ -127,7 +127,7 @@ async def execute_gateway_pipeline(
                 decision_id=decision_id,
             )
 
-        # Step 2b: Tool Grant Capability Check (Enforced if grants exist for agent)
+        # Step 2b: Tool Grant Capability Check ("No grants = no tools" invariant)
         grants_stmt = (
             select(Tool.name)
             .join(AgentToolGrant, AgentToolGrant.tool_id == Tool.id)
@@ -136,7 +136,7 @@ async def execute_gateway_pipeline(
         granted_res = await session.execute(grants_stmt)
         granted_tools = set(granted_res.scalars().all())
 
-        if granted_tools and req.tool not in granted_tools:
+        if req.tool not in granted_tools:
             audit_payload = build_audit_payload(
                 agent_id=agent_id,
                 tool=req.tool,

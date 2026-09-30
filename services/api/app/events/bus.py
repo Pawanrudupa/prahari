@@ -24,7 +24,7 @@ def canonical_json(data: Any) -> str:
 async def _publish_to_redis(raw: str) -> None:
     try:
         if redis_client is not None:
-            await asyncio.wait_for(redis_client.publish(CHANNEL_NAME, raw), timeout=1.0)
+            await asyncio.wait_for(redis_client.publish(CHANNEL_NAME, raw), timeout=0.1)
     except Exception as e:
         logger.debug("Failed to publish event to Redis pub/sub: %s", e)
 
@@ -49,10 +49,25 @@ async def publish_event(event_type: str, payload: dict[str, Any]) -> dict[str, A
         try:
             q.put_nowait(envelope)
         except asyncio.QueueFull:
-            # Drop oldest event if a slow subscriber's bounded queue fills up
+            # Queue overflow: drop oldest items and push stream.resync notice
             with contextlib.suppress(Exception):
-                q.get_nowait()
-                q.put_nowait(envelope)
+                while q.qsize() >= max(1, q.maxsize - 1):
+                    q.get_nowait()
+                resync_notice = {
+                    "event_id": str(uuid4()),
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "type": "stream.resync",
+                    "payload": {
+                        "reason": "queue_overflow",
+                        "message": (
+                            "Client queue overflowed; events dropped. "
+                            "Fetch /v1/graph/snapshot to reconcile."
+                        ),
+                    },
+                }
+                q.put_nowait(resync_notice)
+                if not q.full():
+                    q.put_nowait(envelope)
         except Exception:
             pass
 

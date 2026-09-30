@@ -185,6 +185,25 @@ async def test_limits_fail_closed_behavior(
         headers=admin_headers,
     )
     api_key = reg.json()["api_key"]
+    agent_id = reg.json()["id"]
+
+    # Explicitly grant crm.read_ticket so it passes capability grant check (Gate 4)
+    t_resp = await client.post(
+        "/v1/tools",
+        json={"name": "crm.read_ticket", "server": "crm-mcp", "sensitivity": "normal"},
+        headers=admin_headers,
+    )
+    if t_resp.status_code == 201:
+        tid = t_resp.json()["id"]
+    else:
+        l_resp = await client.get("/v1/tools", headers=admin_headers)
+        tid = next(t["id"] for t in l_resp.json() if t["name"] == "crm.read_ticket")
+
+    await client.post(
+        f"/v1/agents/{agent_id}/grants",
+        json={"tool_id": tid},
+        headers=admin_headers,
+    )
 
     gw_resp = await client.post(
         "/v1/gateway/tool-call",
@@ -222,3 +241,170 @@ def test_production_startup_refuses_placeholder_secrets() -> None:
     )
     with pytest.raises(RuntimeError, match="CRITICAL SECURITY ABORT: ADMIN_TOKEN"):
         validate_security_configuration(insecure_settings)
+
+
+@pytest.mark.asyncio
+async def test_grants_semantics_no_grants_no_tools(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """
+    Gate 4 Verification: Strict 'no grants = no tools' semantics.
+    An agent without explicit grants cannot call any tool.
+    """
+    # 1. Register agent with 0 grants
+    reg = await client.post(
+        "/v1/agents",
+        json={"name": "Zero Grants Bot", "owner": "Security", "role": "support"},
+        headers=admin_headers,
+    )
+    api_key = reg.json()["api_key"]
+    agent_id = reg.json()["id"]
+
+    # Register a tool
+    tool_resp = await client.post(
+        "/v1/tools",
+        json={"name": "crm.secure_read", "server": "crm-mcp", "sensitivity": "normal"},
+        headers=admin_headers,
+    )
+    tool_id = tool_resp.json()["id"]
+
+    # 2. Call tool without grant -> denied with tool_not_granted
+    call_denied = await client.post(
+        "/v1/gateway/tool-call",
+        json={
+            "agent_key": api_key,
+            "session_id": str(uuid4()),
+            "tool": "crm.secure_read",
+            "args": {"id": "1"},
+        },
+    )
+    assert call_denied.status_code == 200
+    res_denied = call_denied.json()
+    assert res_denied["decision"] == "deny"
+    assert res_denied["reason"] == "tool_not_granted"
+
+    # 3. Grant the tool to the agent
+    grant_resp = await client.post(
+        f"/v1/agents/{agent_id}/grants",
+        json={"tool_id": tool_id},
+        headers=admin_headers,
+    )
+    assert grant_resp.status_code == 201
+
+    # 4. Call granted tool -> passes grant check
+    call_allowed = await client.post(
+        "/v1/gateway/tool-call",
+        json={
+            "agent_key": api_key,
+            "session_id": str(uuid4()),
+            "tool": "crm.secure_read",
+            "args": {"id": "1"},
+        },
+    )
+    assert call_allowed.status_code == 200
+    assert call_allowed.json()["reason"] != "tool_not_granted"
+
+    # 5. Calling another ungranted tool is still denied
+    call_other = await client.post(
+        "/v1/gateway/tool-call",
+        json={
+            "agent_key": api_key,
+            "session_id": str(uuid4()),
+            "tool": "other.tool",
+            "args": {},
+        },
+    )
+    assert call_other.status_code == 200
+    assert call_other.json()["decision"] == "deny"
+    assert call_other.json()["reason"] == "tool_not_granted"
+
+
+@pytest.mark.asyncio
+async def test_dev_session_disabled_in_production_and_token_expiration(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Gate 5 Verification: dev-session is disabled outside development,
+    and expired tokens fail verification.
+    """
+    from app.auth.session import create_session_token, verify_session_token
+    from app.core.config import settings
+
+    # 1. In production, dev-session is rejected with 403
+    monkeypatch.setattr(settings, "ENV", "production")
+    resp = await client.get("/v1/auth/dev-session")
+    assert resp.status_code == 403
+    assert "prohibited" in resp.json()["detail"].lower()
+
+    # 2. Token expiration
+    expired_token = create_session_token(role="admin", ttl_seconds=-10)
+    assert verify_session_token(expired_token) is None
+
+    # Using expired token against protected route returns 401
+    auth_resp = await client.get(
+        "/v1/tools",
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+    assert auth_resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_ws_ticket_single_use_and_expiration(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """
+    Gate 6 Verification: Short-lived single-use WebSocket tickets.
+    """
+    from app.auth.ticket import consume_ws_ticket, create_ws_ticket
+
+    # 1. Mint ticket via API endpoint
+    ticket_resp = await client.post("/v1/auth/ws-ticket", headers=admin_headers)
+    assert ticket_resp.status_code == 200
+    ticket_data = ticket_resp.json()
+    assert "ticket" in ticket_data
+    ticket = ticket_data["ticket"]
+    assert ticket.startswith("prh_wstk_")
+    assert ticket_data["expires_in"] == 30
+
+    # 2. First consumption succeeds
+    payload1 = await consume_ws_ticket(ticket)
+    assert payload1 is not None
+
+    # 3. Second consumption fails (strictly single-use)
+    payload2 = await consume_ws_ticket(ticket)
+    assert payload2 is None
+
+    # 4. Expired ticket fails
+    expired_ticket = await create_ws_ticket({"role": "operator"}, ttl_seconds=-1)
+    assert await consume_ws_ticket(expired_ticket) is None
+
+
+@pytest.mark.asyncio
+async def test_event_bus_queue_overflow_emits_resync() -> None:
+    """
+    Gate 7 Verification: When subscriber queue overflows, oldest items are dropped
+    and a stream.resync event is emitted to instruct client reconciliation.
+    """
+    from app.events.bus import publish_event, subscribe_local_events
+
+    # Bounded queue of maxsize=2
+    async with subscribe_local_events(maxsize=2) as queue:
+        # Publish 3 events to force queue overflow
+        await publish_event("action.decided", {"action": "event-1"})
+        await publish_event("action.decided", {"action": "event-2"})
+        await publish_event("action.decided", {"action": "event-3"})
+
+        # Read items from queue
+        received = []
+        while not queue.empty():
+            received.append(queue.get_nowait())
+
+        # Must have received a stream.resync notice indicating overflow
+        types = [e["type"] for e in received]
+        assert "stream.resync" in types
+        resync = next(e for e in received if e["type"] == "stream.resync")
+        assert resync["payload"]["reason"] == "queue_overflow"
+

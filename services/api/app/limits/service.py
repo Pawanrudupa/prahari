@@ -44,6 +44,12 @@ class InMemoryLimitTracker:
         self._repeat_calls: dict[str, tuple[float, int]] = {}  # key -> (timestamp, count)
         self._daily_spend: dict[str, tuple[int, float]] = {}  # key -> (day_window, total)
 
+    def reset(self) -> None:
+        """Clear all in-memory limit counters."""
+        self._minute_calls.clear()
+        self._repeat_calls.clear()
+        self._daily_spend.clear()
+
     def check_and_increment(
         self,
         agent_id: str,

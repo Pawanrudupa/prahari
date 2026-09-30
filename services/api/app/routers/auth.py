@@ -1,11 +1,14 @@
 """Operator authentication endpoints for the web console."""
 
 import hmac
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.auth.admin import require_session_or_admin_token
 from app.auth.session import create_session_token
+from app.auth.ticket import create_ws_ticket
 from app.core.config import settings
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
@@ -66,3 +69,25 @@ async def dev_session_endpoint() -> LoginResponse:
         mode="development-bypass",
         warning="DEVELOPMENT ONLY: Do not use in production environments",
     )
+
+
+class WSTicketResponse(BaseModel):
+    ticket: str = Field(
+        ...,
+        description="Short-lived single-use ticket for WebSocket authentication",
+    )
+    expires_in: int = Field(default=30, description="Ticket expiration in seconds")
+
+
+@router.post(
+    "/ws-ticket",
+    response_model=WSTicketResponse,
+    summary="Mint short-lived single-use ticket for WebSocket connection",
+)
+async def create_ws_ticket_endpoint(
+    auth: Annotated[dict[str, Any], Depends(require_session_or_admin_token)],
+) -> WSTicketResponse:
+    user_sub = auth.get("sub", "operator")
+    ticket = await create_ws_ticket(user_payload={"sub": user_sub}, ttl_seconds=30)
+    return WSTicketResponse(ticket=ticket, expires_in=30)
+

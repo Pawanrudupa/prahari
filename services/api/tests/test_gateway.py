@@ -11,6 +11,30 @@ from app.models.agent import Agent
 from app.models.audit import AuditLog
 
 
+async def _grant_tool(
+    client: AsyncClient,
+    agent_id: str,
+    tool_name: str,
+    admin_headers: dict[str, str],
+) -> None:
+    tool_resp = await client.post(
+        "/v1/tools",
+        json={"name": tool_name, "server": "test-mcp", "sensitivity": "normal"},
+        headers=admin_headers,
+    )
+    if tool_resp.status_code == 201:
+        tool_id = tool_resp.json()["id"]
+    else:
+        list_resp = await client.get("/v1/tools", headers=admin_headers)
+        tool_id = next(t["id"] for t in list_resp.json() if t["name"] == tool_name)
+
+    await client.post(
+        f"/v1/agents/{agent_id}/grants",
+        json={"tool_id": tool_id},
+        headers=admin_headers,
+    )
+
+
 @pytest.mark.asyncio
 async def test_agent_registration_and_gateway_allow(
     client: AsyncClient, admin_headers: dict[str, str]
@@ -26,6 +50,10 @@ async def test_agent_registration_and_gateway_allow(
     agent_data = reg_resp.json()
     assert "api_key" in agent_data
     api_key = agent_data["api_key"]
+    agent_id = agent_data["id"]
+
+    # Grant crm.read_ticket
+    await _grant_tool(client, agent_id, "crm.read_ticket", admin_headers)
 
     # 2. Call gateway with support role -> allowed
     session_id = str(uuid4())
@@ -58,6 +86,7 @@ async def test_gateway_redact_pii(
         headers=admin_headers,
     )
     api_key = reg_resp.json()["api_key"]
+    await _grant_tool(client, reg_resp.json()["id"], "email.send", admin_headers)
 
     gw_resp = await client.post(
         "/v1/gateway/tool-call",
@@ -91,6 +120,7 @@ async def test_gateway_escalate_bulk_export(
         headers=admin_headers,
     )
     api_key = reg_resp.json()["api_key"]
+    await _grant_tool(client, reg_resp.json()["id"], "crm.export", admin_headers)
 
     gw_resp = await client.post(
         "/v1/gateway/tool-call",
@@ -119,6 +149,7 @@ async def test_gateway_deny_prompt_injection(
         headers=admin_headers,
     )
     api_key = reg_resp.json()["api_key"]
+    await _grant_tool(client, reg_resp.json()["id"], "any.tool", admin_headers)
 
     gw_resp = await client.post(
         "/v1/gateway/tool-call",
@@ -215,6 +246,7 @@ async def test_gateway_fail_closed_on_error(
         headers=admin_headers,
     )
     api_key = reg_resp.json()["api_key"]
+    await _grant_tool(client, reg_resp.json()["id"], "crm.read_ticket", admin_headers)
 
     # Inject an intentional crash into scan_injection
     from app.gateway import pipeline
@@ -279,6 +311,7 @@ async def test_audit_verify_and_checkpoint_endpoints(
         headers=admin_headers,
     )
     api_key = reg.json()["api_key"]
+    await _grant_tool(client, reg.json()["id"], "crm.read_ticket", admin_headers)
 
     await client.post(
         "/v1/gateway/tool-call",
@@ -328,6 +361,7 @@ async def test_limits_degraded_audit_logged_without_redis(
         headers=admin_headers,
     )
     api_key = reg.json()["api_key"]
+    await _grant_tool(client, reg.json()["id"], "crm.read_ticket", admin_headers)
 
     # Tool call triggers limits check against sample-policy.yaml limits
     gw_resp = await client.post(

@@ -46,11 +46,12 @@ limits:
 Evaluation precedence: deny > escalate > redact > allow > default. Every decision returns `rule_id` and `policy_version`.
 
 ## Capability Grants & Enforcement
-- `agent_tool_grants(agent_id, tool_id)`: **ENFORCED** at gateway Step 2b. If an agent has grants registered, attempting to execute any tool outside its granted list yields deterministic `deny` with reason `tool_not_granted`. If an agent has no specific grants registered, general policy rules determine access.
+- `agent_tool_grants(agent_id, tool_id)`: **ENFORCED** at gateway Step 2b. Strict default-deny semantics: **"No grants = no tools"**. Every agent starts with zero tool access. If an agent attempts to call any tool not explicitly granted via `agent_tool_grants`, the gateway immediately rejects it with `decision: deny` and `reason: tool_not_granted`.
 
 ## REST endpoints (v1)
 - `POST /v1/auth/login` body `{admin_token}` -> `{session_token, token_type, expires_in, mode}` (exchanges admin secret for browser session token; admin secret is never exposed in browser)
-- `GET /v1/auth/dev-session` -> `{session_token, mode: "development-bypass"}` (development-only bypass, rejected in production)
+- `GET /v1/auth/dev-session` -> `{session_token, mode: "development-bypass"}` (development-only bypass, rejected in production with HTTP 403)
+- `POST /v1/auth/ws-ticket` (admin or session auth) -> `{ticket, expires_in}` (mints a single-use, 30-second ticket for WebSocket connection; prevents token exposure in URLs and access logs)
 - `POST /v1/gateway/tool-call` body `{agent_key, session_id, tool, args, purpose?, context?{user_prompt, tool_outputs[]}}` -> `{decision, rule_id, reason, redacted_args?, approval_id?, decision_id, data_classes}`
 - `GET/POST /v1/agents` (admin only)
 - `GET /v1/tools` (admin/session), `POST /v1/tools` (admin only)
@@ -69,11 +70,23 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `POST /v1/incidents/{id}/circuit-break`
 
 ## WebSocket `/ws/events`
-Authentication: Requires `?token=<session_or_admin_token>` or `Authorization: Bearer <token>`.
-Client queue: Bounded per-client buffer (`maxsize=1000`) with oldest-drop on lag to prevent memory leaks.
+Authentication: Requires single-use ticket query param `?ticket=<ws_ticket>` (obtained from `POST /v1/auth/ws-ticket`, TTL 30s). `?token=` query parameters are strictly forbidden and rejected to prevent credentials from being logged in reverse proxy access logs, URLs, or browser history.
+Client queue: Bounded per-client buffer (`maxsize=1000`). If client lags and the queue fills up, oldest events are dropped to prevent memory leaks, and a synthetic `stream.resync` event is pushed:
+```json
+{
+  "event_id": "uuid",
+  "timestamp": "iso-time",
+  "type": "stream.resync",
+  "payload": {
+    "reason": "queue_overflow",
+    "message": "Client queue overflowed; events dropped. Fetch /v1/graph/snapshot to reconcile."
+  }
+}
+```
+Client handles `stream.resync` by fetching `GET /v1/graph/snapshot` to reconcile missing nodes/edges.
 Heartbeats: Periodic server ping/heartbeat every 25s; client ping responded with pong.
 Event envelope: `{event_id, timestamp, type, payload}`.
-Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, `policy.activated`, `budget.warning`.
+Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, `policy.activated`, `budget.warning`, `stream.resync`.
 
 `action.decided` payload schema:
 ```json
@@ -94,11 +107,17 @@ Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, 
 }
 ```
 
-## Checkpoint Truncation Window & Anti-Tamper Security
-- Checkpoints store `(seq, head_hash, signature)` using HMAC-SHA256 (`AUDIT_HMAC_KEY`).
-- Auto-checkpointed every `AUDIT_CHECKPOINT_INTERVAL` appends (default 50).
-- **Between-checkpoint truncation window**: Deleting records appended after the most recent checkpoint ($k \times N$) up to $(k \times N) + m$ can theoretically occur before the next checkpoint is persisted. `AUDIT_CHECKPOINT_INTERVAL` bounds this exposure; `/v1/audit/verify` flags if uncheckpointed rows exceed the interval or if checkpoint sequence monotonicity is broken.
-- **Production Guard**: Server refuses startup if default placeholder secrets (`ADMIN_TOKEN`, `AUDIT_HMAC_KEY`, `SESSION_SECRET_KEY`) are detected outside `ENV=development`.
+## Known Limits & Architectural Constraints
+1. **Checkpoint Truncation Detection Window**:
+   - Checkpoints store `(seq, head_hash, signature)` using HMAC-SHA256 (`AUDIT_HMAC_KEY`).
+   - Auto-checkpointed every `AUDIT_CHECKPOINT_INTERVAL` appends (default 50).
+   - Deleting records appended after the most recent checkpoint ($k \times N$) up to $(k \times N) + m$ can theoretically occur before the next checkpoint is persisted. `AUDIT_CHECKPOINT_INTERVAL` bounds this exposure; `/v1/audit/verify` flags if uncheckpointed rows exceed the interval or if checkpoint sequence monotonicity is broken.
+2. **Single-Chain Advisory Lock Sequencer**:
+   - Audit log append sequencing uses a PostgreSQL transactional advisory lock (`pg_advisory_xact_lock(740101)`).
+   - Guarantees strict monotonic linear sequence numbers with zero forks under concurrent load.
+   - Tradeoff: Inherently serializes audit commits, limiting maximum write throughput to ~1,000–3,000 appends/sec per PostgreSQL database instance. Multi-region horizontal scale would require sharded partition chains.
+3. **Production Startup Secret Guard**:
+   - Server refuses startup if default placeholder secrets (`ADMIN_TOKEN`, `AUDIT_HMAC_KEY`, `SESSION_SECRET_KEY`) are detected outside `ENV=development`.
 
 ## PII detectors (India-focused)
 Aadhaar (12 digits, Verhoeff checksum), PAN (`[A-Z]{5}[0-9]{4}[A-Z]`), Indian mobile (`(\+91)?[6-9]\d{9}`), email, IFSC, UPI ID. Detectors must return data class labels only, never store raw values in logs.

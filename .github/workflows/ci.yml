@@ -57,7 +57,7 @@ jobs:
         run: uv run alembic upgrade head
       - name: Test (pytest against real Postgres & Redis)
         run: uv run pytest -v
-      - name: Gateway Latency Benchmark (Target: p95 < 50ms)
+      - name: "Gateway Latency Benchmark (Target: p95 < 50ms)"
         run: uv run python benchmarks/bench_gateway.py
 
   web-lint-test:

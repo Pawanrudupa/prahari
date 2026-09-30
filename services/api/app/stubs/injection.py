@@ -3,14 +3,16 @@
 import re
 from typing import Any
 
-# Basic heuristic patterns for detecting prompt injection in tool outputs/context
 INJECTION_PATTERNS = [
     re.compile(r"ignore\s+(all\s+)?(previous|prior)\s+instructions?", re.IGNORECASE),
-    re.compile(r"system\s+prompt\s*:", re.IGNORECASE),
-    re.compile(r"override\s+(the\s+)?policy", re.IGNORECASE),
-    re.compile(r"export\s+all\s+(customers?|users?|data)", re.IGNORECASE),
+    re.compile(r"system\s+(prompt|alert)\s*:", re.IGNORECASE),
+    re.compile(r"override\s+(the\s+)?(policy|safety|guidelines?|guardrails?)", re.IGNORECASE),
+    re.compile(r"export\s+all\s+(customers?|users?|data|records?)", re.IGNORECASE),
+    re.compile(r"dump\s+all\s+", re.IGNORECASE),
     re.compile(r"disregard\s+guardrails?", re.IGNORECASE),
     re.compile(r"you\s+are\s+now\s+in\s+developer\s+mode", re.IGNORECASE),
+    re.compile(r"assistant\s+override", re.IGNORECASE),
+    re.compile(r"in\s+maintenance\s+mode", re.IGNORECASE),
 ]
 
 

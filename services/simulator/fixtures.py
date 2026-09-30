@@ -61,3 +61,9 @@ TOOLS_SPEC = [
         "schema_json": {"properties": {"service_name": {"type": "string"}}},
     },
 ]
+
+CANONICAL_GRANTS: dict[str, list[str]] = {
+    "Support-Bot": ["crm.read_ticket", "email.send", "crm.export"],
+    "Finance-Agent": ["payments.transfer", "crm.export"],
+    "DevOps-Agent": ["infra.restart_service"],
+}

@@ -1,12 +1,11 @@
-"""Tests for WebSocket /ws/events streaming and envelope format."""
-
+import asyncio
 import json
 
 import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.auth.session import create_session_token
+from app.auth.ticket import create_ws_ticket
 from app.main import create_app
 
 
@@ -21,16 +20,35 @@ def test_ws_unauthenticated_connection_rejected() -> None:
         pass
 
 
-def test_ws_authenticated_connection_and_event_delivery() -> None:
-    """Connecting with valid session token receives published action.decided event."""
+def test_ws_query_token_rejected() -> None:
+    """Query parameter ?token= is rejected to prevent log leakage; ?ticket= is required."""
     app = create_app()
-    token = create_session_token(role="admin", mode="admin")
+    with (
+        TestClient(app) as client,
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect("/ws/events?token=some_token"),
+    ):
+        pass
+
+
+def test_ws_authenticated_connection_and_event_delivery() -> None:
+    """Connecting with single-use ticket receives events and prevents replay."""
+    app = create_app()
+    ticket = asyncio.run(create_ws_ticket(user_payload={"role": "admin"}, ttl_seconds=30))
 
     with (
         TestClient(app) as client,
-        client.websocket_connect(f"/ws/events?token={token}") as websocket,
+        client.websocket_connect(f"/ws/events?ticket={ticket}") as websocket,
     ):
         # 1. Send client ping and verify pong
         websocket.send_text(json.dumps({"type": "ping"}))
         resp = json.loads(websocket.receive_text())
         assert resp.get("type") == "pong"
+
+    # 2. Replay attempt with same ticket is rejected
+    with (
+        TestClient(app) as client,
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect(f"/ws/events?ticket={ticket}"),
+    ):
+        pass

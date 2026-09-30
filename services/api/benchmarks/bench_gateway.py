@@ -17,7 +17,8 @@ from app.auth.service import generate_api_key
 from app.gateway.pipeline import execute_gateway_pipeline, get_fallback_policy
 from app.gateway.schemas import ToolCallRequest
 from app.models import Base
-from app.models.agent import Agent
+from app.models.agent import Agent, AgentToolGrant
+from app.models.tool import Tool
 
 
 # SQLite compatibility for Postgres-specific types during benchmark
@@ -84,6 +85,15 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
             status="active",
         )
         session.add(agent)
+        tool = Tool(
+            id=uuid4(),
+            name="crm.read_ticket",
+            server="crm-mcp",
+            sensitivity="normal",
+        )
+        session.add(tool)
+        grant = AgentToolGrant(agent_id=agent.id, tool_id=tool.id)
+        session.add(grant)
         await session.commit()
 
     policy = get_fallback_policy()

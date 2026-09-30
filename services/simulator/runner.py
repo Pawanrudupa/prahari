@@ -1,12 +1,13 @@
 """Simulation execution runner provisioning agents and dispatching tool calls."""
 
 import asyncio
+import contextlib
 from typing import Any
 from uuid import uuid4
 
 import httpx
 from services.simulator.clock import SimulationClock
-from services.simulator.fixtures import AGENTS_SPEC, TOOLS_SPEC
+from services.simulator.fixtures import AGENTS_SPEC, CANONICAL_GRANTS, TOOLS_SPEC
 from services.simulator.scenarios import build_scenario_calls
 
 
@@ -42,6 +43,8 @@ class SimulationRunner:
 
         # 1. Provision standard tools
         for tool_spec in TOOLS_SPEC:
+            if tool_spec["name"] in self.tool_ids:
+                continue
             try:
                 resp = await client.post(
                     f"{self.api_url}/v1/tools",
@@ -50,11 +53,18 @@ class SimulationRunner:
                 )
                 if resp.status_code in (200, 201):
                     self.tool_ids[tool_spec["name"]] = resp.json()["id"]
+                elif resp.status_code == 409:
+                    list_resp = await client.get(f"{self.api_url}/v1/tools", headers=admin_headers)
+                    if list_resp.status_code == 200:
+                        for t in list_resp.json():
+                            self.tool_ids[t["name"]] = t["id"]
             except Exception:
                 pass
 
         # 2. Provision canonical agents
         for agent_spec in AGENTS_SPEC:
+            if agent_spec["name"] in self.agent_keys:
+                continue
             resp = await client.post(
                 f"{self.api_url}/v1/agents",
                 json=agent_spec,
@@ -64,6 +74,22 @@ class SimulationRunner:
                 data = resp.json()
                 self.agent_keys[agent_spec["name"]] = data["api_key"]
                 self.agent_ids[agent_spec["name"]] = data["id"]
+
+        # 3. Provision canonical tool capability grants (enforces no-grants-no-tools invariant)
+        for agent_name, tool_names in CANONICAL_GRANTS.items():
+            agent_id = self.agent_ids.get(agent_name)
+            if not agent_id:
+                continue
+            for tool_name in tool_names:
+                tool_id = self.tool_ids.get(tool_name)
+                if not tool_id:
+                    continue
+                with contextlib.suppress(Exception):
+                    await client.post(
+                        f"{self.api_url}/v1/agents/{agent_id}/grants",
+                        json={"tool_id": tool_id},
+                        headers=admin_headers,
+                    )
 
     async def provision_stress_nodes(
         self,
@@ -86,7 +112,9 @@ class SimulationRunner:
                 headers=admin_headers,
             )
             if resp.status_code in (200, 201):
-                self.agent_keys[name] = resp.json()["api_key"]
+                data = resp.json()
+                self.agent_keys[name] = data["api_key"]
+                self.agent_ids[name] = data["id"]
 
         for i in range(len(self.tool_ids), num_tools):
             name = f"stress.tool_{i:03d}"
@@ -143,22 +171,35 @@ class SimulationRunner:
         scenario: str = "all",
         count: int = 20,
         stress: bool = False,
+        client: httpx.AsyncClient | None = None,
     ) -> list[dict[str, Any]]:
         """Run complete scenario simulation."""
         self.reset()
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            await self.provision(client)
-
-            if stress:
-                await self.provision_stress_nodes(client, target_nodes=200)
-
-            calls = build_scenario_calls(scenario=scenario, count=count, seed=self.seed)
-            session_id = str(uuid4())
-
-            for call in calls:
-                await self.execute_call(client, call, session_id)
-                if self.rate > 0:
-                    delay = 1.0 / self.rate
-                    await asyncio.sleep(min(delay, 0.05))  # cap delay in automated runs
+        if client is not None:
+            await self._run_with_client(client, scenario, count, stress)
+        else:
+            async with httpx.AsyncClient(timeout=30.0) as c:
+                await self._run_with_client(c, scenario, count, stress)
 
         return self.decisions_log
+
+    async def _run_with_client(
+        self,
+        client: httpx.AsyncClient,
+        scenario: str,
+        count: int,
+        stress: bool,
+    ) -> None:
+        await self.provision(client)
+
+        if stress:
+            await self.provision_stress_nodes(client, target_nodes=200)
+
+        calls = build_scenario_calls(scenario=scenario, count=count, seed=self.seed)
+        session_id = str(uuid4())
+
+        for call in calls:
+            await self.execute_call(client, call, session_id)
+            if self.rate > 0:
+                delay = 1.0 / self.rate
+                await asyncio.sleep(min(delay, 0.05))
