@@ -254,7 +254,9 @@ async def test_audit_checkpoint_detects_chain_rewriting(db_session: AsyncSession
     records = list((await db_session.execute(stmt)).scalars().all())
 
     # Alter seq 1
-    records[0].payload_json["reason"] = "forged_past"
+    new_payload = dict(records[0].payload_json)
+    new_payload["reason"] = "forged_past"
+    records[0].payload_json = new_payload
     prev = GENESIS_PREV_HASH
     for r in records:
         r.prev_hash = prev

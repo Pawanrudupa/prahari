@@ -20,9 +20,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await redis_client.ping()
     yield
     # Shutdown
-    await engine.dispose()
     with contextlib.suppress(Exception):
-        await redis_client.aclose()
+        await engine.dispose()
 
 
 def create_app() -> FastAPI:

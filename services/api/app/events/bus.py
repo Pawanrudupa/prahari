@@ -71,11 +71,11 @@ async def publish_event(event_type: str, payload: dict[str, Any]) -> dict[str, A
         except Exception:
             pass
 
-    # 2. Redis pub/sub distribution (best-effort background task)
+    # 2. Redis pub/sub distribution (best-effort)
     if redis_client is not None:
         raw = canonical_json(envelope)
         with contextlib.suppress(Exception):
-            asyncio.create_task(_publish_to_redis(raw))
+            await _publish_to_redis(raw)
 
     return envelope
 

@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 import pytest
@@ -31,10 +30,11 @@ def test_ws_query_token_rejected() -> None:
         pass
 
 
-def test_ws_authenticated_connection_and_event_delivery() -> None:
+@pytest.mark.asyncio
+async def test_ws_authenticated_connection_and_event_delivery() -> None:
     """Connecting with single-use ticket receives events and prevents replay."""
     app = create_app()
-    ticket = asyncio.run(create_ws_ticket(user_payload={"role": "admin"}, ttl_seconds=30))
+    ticket = await create_ws_ticket(user_payload={"role": "admin"}, ttl_seconds=30)
 
     with (
         TestClient(app) as client,
