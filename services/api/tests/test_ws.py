@@ -31,8 +31,11 @@ def test_ws_query_token_rejected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ws_authenticated_connection_and_event_delivery() -> None:
+async def test_ws_authenticated_connection_and_event_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Connecting with single-use ticket receives events and prevents replay."""
+    monkeypatch.setattr("app.core.redis.redis_client", None)
     app = create_app()
     ticket = await create_ws_ticket(user_payload={"role": "admin"}, ttl_seconds=30)
 

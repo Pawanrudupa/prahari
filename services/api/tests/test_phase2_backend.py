@@ -19,10 +19,11 @@ async def test_auth_login_and_dev_session(
     admin_headers: dict[str, str],
 ) -> None:
     """Verify web operator login flow and development session endpoint."""
-    # 1. Successful login with admin token
+    from app.core.config import settings
+
     login_resp = await client.post(
         "/v1/auth/login",
-        json={"admin_token": "prahari-admin-dev-secret"},
+        json={"admin_token": settings.ADMIN_TOKEN},
     )
     assert login_resp.status_code == 200
     data = login_resp.json()

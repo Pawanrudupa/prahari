@@ -349,12 +349,17 @@ async def test_audit_verify_and_checkpoint_endpoints(
 
 @pytest.mark.asyncio
 async def test_limits_degraded_audit_logged_without_redis(
-    client: AsyncClient, admin_headers: dict[str, str], db_session: AsyncSession
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
     When Redis is not configured, limits fallback to in-memory
     and record an explicit limits.degraded audit event.
     """
+    monkeypatch.setattr("app.core.redis.redis_client", None)
+
     reg = await client.post(
         "/v1/agents",
         json={"name": "Degraded Limits Bot", "owner": "Testing", "role": "support"},
@@ -376,13 +381,13 @@ async def test_limits_degraded_audit_logged_without_redis(
     assert gw_resp.status_code == 200
 
     # Verify that limits.degraded event was recorded in audit log
-    stmt = (
-        select(AuditLog)
-        .where(AuditLog.payload_json["event_type"].as_string() == "limits.degraded")
-        .order_by(AuditLog.seq.desc())
+    records = list(
+        (await db_session.execute(select(AuditLog).order_by(AuditLog.seq.desc()))).scalars().all()
     )
-    result = await db_session.execute(stmt)
-    degraded_entry = result.scalar_one_or_none()
+    degraded_entry = next(
+        (r for r in records if r.payload_json.get("event_type") == "limits.degraded"),
+        None,
+    )
     assert degraded_entry is not None
     assert degraded_entry.payload_json["outcome"] == "degraded"
     assert "redis_unavailable" in degraded_entry.payload_json["reason"]
