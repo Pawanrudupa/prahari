@@ -61,13 +61,18 @@ docs/
 docker-compose.yml
 ```
 
-## Security requirements
-- Agent API keys hashed at rest; secrets only via env; `.env.example` committed, `.env` ignored.
-- Audit log append-only; each record stores `prev_hash` and `hash = SHA256(prev_hash || canonical_json)`; `/audit/verify` recomputes chain.
-- RAG/LLM output is escaped in UI (no HTML injection). Treat retrieved policy text as data, not instructions.
-- Rate-limit the gateway; CORS locked to configured origins.
-- RBAC roles: admin, analyst, approver, viewer (P2 enforce; MVP single admin).
-- Fail-closed: if policy engine errors, decision = deny with reason `engine_error`.
+## Security & Governance Invariants
+- **Admin authentication**: Administrative and security auditor endpoints (`/v1/agents`, `/v1/audit/verify`, `/v1/audit/checkpoint`) require a valid `ADMIN_TOKEN` via `Authorization: Bearer <token>` or `X-Admin-Token`.
+- **Agent API keys**: Hashed at rest using SHA-256; fast lookup by key prefix + constant-time comparison (`hmac.compare_digest`); unknown or disabled agents receive HTTP 401 and an `agent.auth_failed` audit event is logged.
+- **Append-only hash chain**: Each record stores `prev_hash` and `hash = SHA256(prev_hash || canonical_json(payload))`. Serialized using PostgreSQL transaction advisory lock (`pg_advisory_xact_lock(740101)`) to guarantee zero chain forks under concurrent gateway requests.
+- **Audit anti-truncation & anti-rewriting checkpoints**: Periodic HMAC-SHA256 signed checkpoints `(seq, head_hash)` signed with server secret `AUDIT_HMAC_KEY` protect against database truncation (tail deletion) or whole-chain recomputation attacks. `/v1/audit/verify` verifies both internal chain linkage and all signed checkpoints.
+- **Throughput design & trade-off**: A single global hash chain serializes all appends via advisory locks, capping write throughput to sequential DB transaction latency. This is an intentional MVP governance trade-off for absolute audit integrity before multi-tenant partition/sharding.
+- **Redis-down governance behavior**: Configurable via `LIMITS_FAIL_CLOSED`. When `true`, gateway fails closed (`deny` with `limits_service_unavailable`) if Redis is down. When `false`, falls back to in-memory tracking and records an explicit `limits.degraded` audit event.
+- **Detector stubs (Phase 1)**: In Phase 1, prompt injection scanning and PII detection run heuristic stubs (`app/stubs/`) to validate the pipeline flow without heavy ML dependencies. Full scikit-learn/transformer models are introduced in Phase 3 (ML signals) and Phase 5 (DPDP & PII).
+- **RAG/LLM output safety**: Escaped in UI (no HTML/script injection). Retrieved policy text is treated as data, not instructions.
+- **Fail-closed**: Any unexpected exception in the decision path yields `deny` with reason `engine_error`.
+- **Zero raw PII/secrets**: No raw arguments or secrets are stored in audit logs or database fixtures. Only canonical argument hashes (`args_hash`) and detected data-class labels are stored.
 
 ## Observability
 Structured JSON logs, OpenTelemetry traces on the pipeline steps, `/metrics` (Prometheus format).
+

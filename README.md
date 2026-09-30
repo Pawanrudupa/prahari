@@ -57,3 +57,17 @@ uv run uvicorn app.main:create_app --factory --reload
 pnpm install
 pnpm --filter @prahari/web dev
 ```
+
+## Phase 1 Architecture & Security Notes
+
+- **Deterministic Governance**: Tool-call decisions are strictly deterministic: `deny > escalate > redact > allow > default deny`. AI signals can only make decisions stricter or explain them.
+- **Admin Authentication**: All sensitive admin endpoints (`POST /v1/agents`, `GET /v1/audit/verify`, `POST /v1/audit/checkpoint`) require a bearer token matching `ADMIN_TOKEN`.
+- **Cryptographic Audit Chain**:
+  - Every decision appends to a serialized SHA-256 hash chain (`hash = SHA256(prev_hash || canonical_json(payload))`).
+  - Serialized via PostgreSQL transaction advisory locks (`pg_advisory_xact_lock`) ensuring 0 forks under concurrent requests.
+  - Periodic HMAC-SHA256 signed checkpoints (`POST /v1/audit/checkpoint`) protect against database tail truncation and whole-chain rewriting attacks.
+  - Zero raw PII/secrets stored: only argument hashes (`args_hash`) and detected data-class labels are retained.
+- **Throughput & Concurrency**: The global advisory lock serializes audit appends sequentially. For MVP, write latency benchmarks achieve p95 = ~13 ms (budget: 50 ms). Multi-tenant sharding is planned for multi-org scale.
+- **Limits & Degraded Mode**: Rate limits (calls/min), runaway loop braking (repeated identical call signatures), and daily INR spend caps run in Redis. If Redis is unavailable, Prahari can fail closed (`LIMITS_FAIL_CLOSED=true`) or run in degraded in-memory mode, emitting explicit `limits.degraded` audit events.
+- **Detector Stubs**: Phase 1 includes heuristic scanners (`app/stubs/`) for prompt injection and PII to validate pipeline contracts and integration tests. Full ML models (scikit-learn Isolation Forest, BERT injection classifier) and DPDP modules are scheduled for Phases 3 and 5.
+

@@ -110,3 +110,19 @@ async def test_check_limits_async_fallback() -> None:
     r3 = await check_limits(None, agent_id, "tool.x", {"id": 1}, limits)
     assert r3.allowed is False
     assert "Loop detected" in str(r3.reason)
+
+
+@pytest.mark.asyncio
+async def test_check_limits_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify check_limits fails closed when LIMITS_FAIL_CLOSED is True and Redis is down."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "LIMITS_FAIL_CLOSED", True)
+    agent_id = uuid4()
+    limits = [PolicyLimit(id="L1", max_calls_per_min=10)]
+
+    res = await check_limits(None, agent_id, "tool.y", {}, limits)
+    assert res.allowed is False
+    assert res.degraded is True
+    assert res.reason == "limits_service_unavailable"
+

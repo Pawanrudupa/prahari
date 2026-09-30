@@ -212,6 +212,17 @@ def upgrade() -> None:
     )
 
     op.create_table(
+        "audit_checkpoints",
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("seq", sa.BigInteger(), nullable=False),
+        sa.Column("head_hash", sa.Text(), nullable=False),
+        sa.Column("signature", sa.Text(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+    )
+
+    op.create_table(
         "budgets",
         sa.Column(
             "agent_id", sa.Uuid(), sa.ForeignKey("agents.id", ondelete="CASCADE"), primary_key=True
@@ -237,6 +248,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("redteam_runs")
     op.drop_table("budgets")
+    op.drop_table("audit_checkpoints")
     op.drop_table("audit_log")
     op.drop_table("incidents")
     op.drop_table("approvals")

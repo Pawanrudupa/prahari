@@ -1,5 +1,5 @@
 from app.models.agent import Agent, AgentToolGrant
-from app.models.audit import AuditLog
+from app.models.audit import AuditCheckpoint, AuditLog
 from app.models.base import Base
 from app.models.budget import Budget, Incident, RedteamRun
 from app.models.decision import Approval, Decision
@@ -21,6 +21,7 @@ __all__ = [
     "Decision",
     "Approval",
     "AuditLog",
+    "AuditCheckpoint",
     "Budget",
     "Incident",
     "RedteamRun",

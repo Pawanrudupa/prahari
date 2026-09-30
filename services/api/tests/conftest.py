@@ -61,3 +61,12 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+def admin_headers() -> dict[str, str]:
+    """Provide admin authorization headers matching settings.ADMIN_TOKEN."""
+    from app.core.config import settings
+
+    return {"Authorization": f"Bearer {settings.ADMIN_TOKEN}"}
+

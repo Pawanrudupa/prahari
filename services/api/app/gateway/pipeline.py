@@ -153,6 +153,23 @@ async def execute_gateway_pipeline(
                 rule_id = limit_res.limit_id
                 reason = limit_res.reason or "limit_exceeded"
 
+            # Record degraded limits event if Redis was unavailable for configured limits
+            if limit_res.degraded and active_policy.limits:
+                degraded_payload = build_audit_payload(
+                    agent_id=agent_id,
+                    tool=req.tool,
+                    args=req.args,
+                    data_classes=data_classes,
+                    outcome="degraded",
+                    rule_id=limit_res.limit_id,
+                    policy_version=active_policy.version,
+                    reason=limit_res.reason or "redis_unavailable_in_memory_fallback",
+                    session_id=req.session_id,
+                    event_type="limits.degraded",
+                )
+                await append_audit_log(session, degraded_payload)
+
+
         # Step 7: Risk Score (advisory signal - can tighten allow -> escalate, never permit deny)
         if outcome == "allow" and injection_score >= 0.7:
             outcome = "escalate"

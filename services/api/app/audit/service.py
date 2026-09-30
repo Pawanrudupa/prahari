@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import hashlib
+import hmac
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -11,7 +12,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.audit import AuditLog
+from app.models.audit import AuditCheckpoint, AuditLog
 
 GENESIS_PREV_HASH = "0" * 64
 _APPEND_LOCK = asyncio.Lock()
@@ -104,3 +105,39 @@ async def append_audit_log(session: AsyncSession, payload: dict[str, Any]) -> Au
         await session.commit()
         await session.refresh(entry)
         return entry
+
+
+def sign_checkpoint(seq: int, head_hash: str, secret_key: str | None = None) -> str:
+    """Compute HMAC-SHA256 signature for an audit checkpoint (seq, head_hash)."""
+    from app.core.config import settings
+
+    key = secret_key or settings.AUDIT_HMAC_KEY
+    data = f"{seq}:{head_hash}".encode()
+    return hmac.new(key.encode("utf-8"), data, hashlib.sha256).hexdigest()
+
+
+async def create_checkpoint(
+    session: AsyncSession, secret_key: str | None = None
+) -> AuditCheckpoint | None:
+    """
+    Take an HMAC-signed cryptographic snapshot of the chain head.
+    Protects against DB truncation and whole-chain rewriting attacks.
+    """
+    stmt = select(AuditLog).order_by(AuditLog.seq.desc()).limit(1)
+    result = await session.execute(stmt)
+    latest = result.scalar_one_or_none()
+
+    if latest is None:
+        return None
+
+    signature = sign_checkpoint(latest.seq, latest.hash, secret_key)
+    checkpoint = AuditCheckpoint(
+        id=uuid4(),
+        seq=latest.seq,
+        head_hash=latest.hash,
+        signature=signature,
+    )
+    session.add(checkpoint)
+    await session.commit()
+    await session.refresh(checkpoint)
+    return checkpoint

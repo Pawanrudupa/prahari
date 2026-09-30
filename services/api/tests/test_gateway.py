@@ -12,12 +12,15 @@ from app.models.audit import AuditLog
 
 
 @pytest.mark.asyncio
-async def test_agent_registration_and_gateway_allow(client: AsyncClient) -> None:
+async def test_agent_registration_and_gateway_allow(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
     """Register an agent, receive API key, and execute an allowed tool call."""
-    # 1. Register agent
+    # 1. Register agent (requires admin auth)
     reg_resp = await client.post(
         "/v1/agents",
         json={"name": "Support Bot", "owner": "Customer Ops", "role": "support"},
+        headers=admin_headers,
     )
     assert reg_resp.status_code == 201
     agent_data = reg_resp.json()
@@ -44,12 +47,15 @@ async def test_agent_registration_and_gateway_allow(client: AsyncClient) -> None
 
 
 @pytest.mark.asyncio
-async def test_gateway_redact_pii(client: AsyncClient) -> None:
+async def test_gateway_redact_pii(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
     """Verify tool call with personal data is redacted per policy R2."""
     # Register support agent
     reg_resp = await client.post(
         "/v1/agents",
         json={"name": "Mail Agent", "owner": "Ops", "role": "support"},
+        headers=admin_headers,
     )
     api_key = reg_resp.json()["api_key"]
 
@@ -75,11 +81,14 @@ async def test_gateway_redact_pii(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_gateway_escalate_bulk_export(client: AsyncClient) -> None:
+async def test_gateway_escalate_bulk_export(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
     """Verify tool call with rows_gt 100 triggers escalation per policy R3."""
     reg_resp = await client.post(
         "/v1/agents",
         json={"name": "Export Agent", "owner": "Data", "role": "support"},
+        headers=admin_headers,
     )
     api_key = reg_resp.json()["api_key"]
 
@@ -100,11 +109,14 @@ async def test_gateway_escalate_bulk_export(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_gateway_deny_prompt_injection(client: AsyncClient) -> None:
+async def test_gateway_deny_prompt_injection(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
     """Verify prompt injection signal in context triggers deny per policy R4."""
     reg_resp = await client.post(
         "/v1/agents",
         json={"name": "Ingestion Agent", "owner": "Security", "role": "support"},
+        headers=admin_headers,
     )
     api_key = reg_resp.json()["api_key"]
 
@@ -157,12 +169,13 @@ async def test_gateway_unknown_agent_returns_401_and_audits(
 
 @pytest.mark.asyncio
 async def test_gateway_disabled_agent_returns_401(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient, db_session: AsyncSession, admin_headers: dict[str, str]
 ) -> None:
     """Disabled agent returns 401 Unauthorized."""
     reg_resp = await client.post(
         "/v1/agents",
         json={"name": "Suspended Bot", "owner": "Risk", "role": "support"},
+        headers=admin_headers,
     )
     agent_id = reg_resp.json()["id"]
     api_key = reg_resp.json()["api_key"]
@@ -188,7 +201,9 @@ async def test_gateway_disabled_agent_returns_401(
 
 @pytest.mark.asyncio
 async def test_gateway_fail_closed_on_error(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    admin_headers: dict[str, str],
 ) -> None:
     """
     Fail-closed invariant: If an unhandled exception occurs anywhere
@@ -197,6 +212,7 @@ async def test_gateway_fail_closed_on_error(
     reg_resp = await client.post(
         "/v1/agents",
         json={"name": "Crash Test Bot", "owner": "QA", "role": "support"},
+        headers=admin_headers,
     )
     api_key = reg_resp.json()["api_key"]
 
@@ -225,10 +241,115 @@ async def test_gateway_fail_closed_on_error(
 
 
 @pytest.mark.asyncio
-async def test_audit_verify_endpoint(client: AsyncClient) -> None:
-    """Verify GET /v1/audit/verify reports valid hash chain after gateway operations."""
-    verify_resp = await client.get("/v1/audit/verify")
+async def test_admin_auth_protection(client: AsyncClient) -> None:
+    """Admin endpoints require valid ADMIN_TOKEN; unauthenticated requests are rejected with 401."""
+    # 1. POST /v1/agents without auth
+    resp1 = await client.post(
+        "/v1/agents",
+        json={"name": "Hacker Bot", "owner": "Evil", "role": "admin"},
+    )
+    assert resp1.status_code == 401
+
+    # 2. GET /v1/audit/verify without auth
+    resp2 = await client.get("/v1/audit/verify")
+    assert resp2.status_code == 401
+
+    # 3. POST /v1/audit/checkpoint without auth
+    resp3 = await client.post("/v1/audit/checkpoint")
+    assert resp3.status_code == 401
+
+    # 4. Invalid bearer token
+    resp4 = await client.post(
+        "/v1/agents",
+        json={"name": "Hacker Bot", "owner": "Evil", "role": "admin"},
+        headers={"Authorization": "Bearer wrong-token"},
+    )
+    assert resp4.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_audit_verify_and_checkpoint_endpoints(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    """Verify admin endpoints: audit verify and HMAC checkpoint creation."""
+    # 1. Register agent and make a tool call
+    reg = await client.post(
+        "/v1/agents",
+        json={"name": "Audited Agent", "owner": "SecOps", "role": "support"},
+        headers=admin_headers,
+    )
+    api_key = reg.json()["api_key"]
+
+    await client.post(
+        "/v1/gateway/tool-call",
+        json={
+            "agent_key": api_key,
+            "session_id": str(uuid4()),
+            "tool": "crm.read_ticket",
+            "args": {"ticket_id": "TCK-999"},
+        },
+    )
+
+    # 2. Verify audit chain
+    verify_resp = await client.get("/v1/audit/verify", headers=admin_headers)
     assert verify_resp.status_code == 200
     data = verify_resp.json()
     assert data["valid"] is True
     assert data["broken_seq"] is None
+    assert data["checkpoints_verified"] == 0
+
+    # 3. Create checkpoint
+    cp_resp = await client.post("/v1/audit/checkpoint", headers=admin_headers)
+    assert cp_resp.status_code == 201
+    cp_data = cp_resp.json()
+    assert "signature" in cp_data
+    assert cp_data["seq"] >= 1
+    assert len(cp_data["signature"]) == 64  # HMAC-SHA256 hex length
+
+    # 4. Re-verify audit chain with checkpoint
+    verify_resp2 = await client.get("/v1/audit/verify", headers=admin_headers)
+    assert verify_resp2.status_code == 200
+    data2 = verify_resp2.json()
+    assert data2["valid"] is True
+    assert data2["checkpoints_verified"] == 1
+
+
+@pytest.mark.asyncio
+async def test_limits_degraded_audit_logged_without_redis(
+    client: AsyncClient, admin_headers: dict[str, str], db_session: AsyncSession
+) -> None:
+    """
+    When Redis is not configured, limits fallback to in-memory
+    and record an explicit limits.degraded audit event.
+    """
+    reg = await client.post(
+        "/v1/agents",
+        json={"name": "Degraded Limits Bot", "owner": "Testing", "role": "support"},
+        headers=admin_headers,
+    )
+    api_key = reg.json()["api_key"]
+
+    # Tool call triggers limits check against sample-policy.yaml limits
+    gw_resp = await client.post(
+        "/v1/gateway/tool-call",
+        json={
+            "agent_key": api_key,
+            "session_id": str(uuid4()),
+            "tool": "crm.read_ticket",
+            "args": {"ticket_id": "TCK-555"},
+        },
+    )
+    assert gw_resp.status_code == 200
+
+    # Verify that limits.degraded event was recorded in audit log
+    stmt = (
+        select(AuditLog)
+        .where(AuditLog.payload_json["event_type"].as_string() == "limits.degraded")
+        .order_by(AuditLog.seq.desc())
+    )
+    result = await db_session.execute(stmt)
+    degraded_entry = result.scalar_one_or_none()
+    assert degraded_entry is not None
+    assert degraded_entry.payload_json["outcome"] == "degraded"
+    assert "redis_unavailable" in degraded_entry.payload_json["reason"]
+

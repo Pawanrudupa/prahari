@@ -8,6 +8,7 @@ from uuid import UUID
 
 from redis.asyncio import Redis
 
+from app.core.config import settings
 from app.policy.schemas import PolicyLimit
 
 
@@ -17,6 +18,7 @@ class LimitCheckResult(NamedTuple):
     limit_id: str | None = None
     current_value: float = 0.0
     threshold: float = 0.0
+    degraded: bool = False
 
 
 def canonical_json(data: Any) -> str:
@@ -132,9 +134,11 @@ async def check_limits(
     """
     Check all defined limits for an agent call.
     Uses Redis when connected, falling back to in-memory tracking.
+    If Redis is unavailable and LIMITS_FAIL_CLOSED is True, fails closed.
     """
     agent_str = str(agent_id)
     sig = compute_call_signature(agent_str, tool, args)
+    is_degraded = False
 
     for limit in limits:
         if limit.per != "agent":
@@ -159,6 +163,7 @@ async def check_limits(
                             limit_id=limit.id,
                             current_value=float(count),
                             threshold=float(limit.max_calls_per_min),
+                            degraded=False,
                         )
 
                 # 2. Loop detection (repeat same call signature)
@@ -174,6 +179,7 @@ async def check_limits(
                             limit_id=limit.id,
                             current_value=float(repeat_count),
                             threshold=float(limit.max_repeat_same_call),
+                            degraded=False,
                         )
 
                 # 3. Daily spend limit
@@ -192,15 +198,39 @@ async def check_limits(
                             limit_id=limit.id,
                             current_value=total_spend,
                             threshold=float(limit.max_spend_inr_per_day),
+                            degraded=False,
                         )
                 continue
             except Exception:
-                # If Redis operation fails, fall back gracefully to in-memory
-                pass
+                # If Redis operation fails, mark degraded and fall back
+                is_degraded = True
+                if settings.LIMITS_FAIL_CLOSED:
+                    return LimitCheckResult(
+                        allowed=False,
+                        reason="limits_service_unavailable",
+                        limit_id=limit.id,
+                        degraded=True,
+                    )
+        else:
+            is_degraded = True
+            if settings.LIMITS_FAIL_CLOSED:
+                return LimitCheckResult(
+                    allowed=False,
+                    reason="limits_service_unavailable",
+                    limit_id=limit.id,
+                    degraded=True,
+                )
 
         # Fallback to in-memory tracker
         result = in_memory_tracker.check_and_increment(agent_str, sig, limit, spend_amount)
         if not result.allowed:
-            return result
+            return LimitCheckResult(
+                allowed=False,
+                reason=result.reason,
+                limit_id=result.limit_id,
+                current_value=result.current_value,
+                threshold=result.threshold,
+                degraded=is_degraded,
+            )
 
-    return LimitCheckResult(allowed=True)
+    return LimitCheckResult(allowed=True, degraded=is_degraded)

@@ -14,6 +14,7 @@
 - `approvals(id, decision_id, status, approver, decided_at, note)`
 - `incidents(id, session_id, kind, severity, opened_at, closed_at)`
 - `audit_log(id, seq, prev_hash, hash, payload_json, created_at)`
+- `audit_checkpoints(id, seq, head_hash, signature, created_at)`
 - `budgets(agent_id, window, max_tokens, max_spend, max_calls)`
 - `redteam_runs(id, scenario, owasp_ids text[], result, created_at)`
 

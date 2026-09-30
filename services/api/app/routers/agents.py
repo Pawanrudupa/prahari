@@ -9,11 +9,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.admin import require_admin_token
 from app.auth.service import generate_api_key
 from app.core.database import get_db
 from app.models.agent import Agent
 
-router = APIRouter(prefix="/v1/agents", tags=["agents"])
+router = APIRouter(
+    prefix="/v1/agents",
+    tags=["agents"],
+    dependencies=[Depends(require_admin_token)],
+)
 
 
 class AgentCreateRequest(BaseModel):
