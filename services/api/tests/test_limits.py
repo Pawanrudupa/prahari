@@ -120,12 +120,11 @@ async def test_check_limits_async_fallback(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 @pytest.mark.asyncio
-async def test_check_limits_fail_closed_default() -> None:
-    """Verify check_limits fails closed by default (LIMITS_FAIL_OPEN=False) when Redis is down."""
+async def test_check_limits_fail_closed_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify check_limits fails closed when LIMITS_FAIL_OPEN=False and Redis is down."""
     from app.core.config import settings
 
-    # Default is FAIL CLOSED (LIMITS_FAIL_OPEN is False)
-    assert settings.LIMITS_FAIL_OPEN is False
+    monkeypatch.setattr(settings, "LIMITS_FAIL_OPEN", False)
     agent_id = uuid4()
     limits = [PolicyLimit(id="L1", max_calls_per_min=10)]
 

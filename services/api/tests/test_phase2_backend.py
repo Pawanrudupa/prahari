@@ -178,6 +178,7 @@ async def test_limits_fail_closed_behavior(
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "LIMITS_FAIL_OPEN", False)
+    monkeypatch.setattr("app.gateway.router.redis_client", None)
 
     reg = await client.post(
         "/v1/agents",
@@ -220,13 +221,13 @@ async def test_limits_fail_closed_behavior(
     assert res["reason"] == "limits_unavailable"
 
     # Verify audit event recorded as limits.unavailable
-    stmt = (
-        select(AuditLog)
-        .where(AuditLog.payload_json["event_type"].as_string() == "limits.unavailable")
-        .order_by(AuditLog.seq.desc())
-    )
+    stmt = select(AuditLog).order_by(AuditLog.seq.desc())
     result = await db_session.execute(stmt)
-    entry = result.scalar_one_or_none()
+    records = list(result.scalars().all())
+    entry = next(
+        (r for r in records if r.payload_json.get("event_type") == "limits.unavailable"),
+        None,
+    )
     assert entry is not None
     assert entry.payload_json["reason"] == "limits_unavailable"
 
