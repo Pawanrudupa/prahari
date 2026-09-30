@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import append_audit_log, build_audit_payload
 from app.auth.service import AuthError
+from app.core import redis as redis_module
 from app.core.database import get_db
-from app.core.redis import redis_client
 from app.gateway.pipeline import execute_gateway_pipeline
 from app.gateway.schemas import ToolCallRequest, ToolCallResponse
 
@@ -33,7 +33,7 @@ async def gateway_tool_call(
     try:
         return await execute_gateway_pipeline(
             session=db,
-            redis=redis_client,
+            redis=redis_module.redis_client,
             req=req,
         )
     except AuthError as e:

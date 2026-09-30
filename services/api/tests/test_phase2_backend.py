@@ -178,7 +178,7 @@ async def test_limits_fail_closed_behavior(
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "LIMITS_FAIL_OPEN", False)
-    monkeypatch.setattr("app.gateway.router.redis_client", None)
+    monkeypatch.setattr("app.core.redis.redis_client", None)
 
     reg = await client.post(
         "/v1/agents",
