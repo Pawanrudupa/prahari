@@ -25,8 +25,10 @@ async def test_concurrent_50_parallel_appends() -> None:
     db_url = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
     is_postgres = bool(db_url and ("postgres" in db_url))
 
+    from sqlalchemy.pool import NullPool
+
     if is_postgres:
-        engine = create_async_engine(db_url, echo=False)
+        engine = create_async_engine(db_url, echo=False, poolclass=NullPool)
         async with engine.begin() as conn:
             with contextlib.suppress(Exception):
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
@@ -35,7 +37,6 @@ async def test_concurrent_50_parallel_appends() -> None:
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-
 
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -65,5 +66,9 @@ async def test_concurrent_50_parallel_appends() -> None:
         assert result.error is None
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        if is_postgres:
+            with contextlib.suppress(Exception):
+                await conn.execute(text("TRUNCATE TABLE audit_log, audit_checkpoints CASCADE"))
+        else:
+            await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()

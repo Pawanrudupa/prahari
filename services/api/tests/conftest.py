@@ -57,6 +57,26 @@ def _compile_jsonb_sqlite(type_: Any, compiler: Any, **kw: Any) -> str:
     return "JSON"
 
 
+TABLES_TO_TRUNCATE = [
+    "audit_checkpoints",
+    "audit_log",
+    "approvals",
+    "decisions",
+    "actions",
+    "incidents",
+    "sessions",
+    "agent_tool_grants",
+    "agents",
+    "tools",
+    "budgets",
+    "redteam_runs",
+    "policy_chunks",
+    "policy_documents",
+    "policy_versions",
+    "policies",
+]
+
+
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Provide an isolated test database session (Real Postgres in CI, SQLite in local dev)."""
@@ -72,7 +92,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             yield session
 
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
+            with contextlib.suppress(Exception):
+                truncate_sql = f"TRUNCATE TABLE {', '.join(TABLES_TO_TRUNCATE)} CASCADE;"
+                await conn.execute(text(truncate_sql))
         await engine.dispose()
     else:
         engine = create_async_engine(
