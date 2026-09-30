@@ -11,6 +11,9 @@ from app.limits.service import (
 )
 from app.policy.schemas import PolicyLimit
 
+pytestmark = [pytest.mark.postgres]
+
+
 
 def test_stable_call_signature_deterministic() -> None:
     """Verify call signature hash is stable across dictionary key order variations."""
@@ -90,8 +93,11 @@ def test_in_memory_daily_spend_limit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_check_limits_async_fallback() -> None:
-    """Verify check_limits async wrapper works cleanly without Redis."""
+async def test_check_limits_async_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify check_limits falls back to in-memory tracking when LIMITS_FAIL_OPEN is True."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "LIMITS_FAIL_OPEN", True)
     agent_id = uuid4()
     limits = [
         PolicyLimit(id="L1", max_calls_per_min=10),
@@ -101,6 +107,7 @@ async def test_check_limits_async_fallback() -> None:
     # First call
     r1 = await check_limits(None, agent_id, "tool.x", {"id": 1}, limits)
     assert r1.allowed is True
+    assert r1.degraded is True
 
     # Second call
     r2 = await check_limits(None, agent_id, "tool.x", {"id": 1}, limits)
@@ -113,16 +120,18 @@ async def test_check_limits_async_fallback() -> None:
 
 
 @pytest.mark.asyncio
-async def test_check_limits_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify check_limits fails closed when LIMITS_FAIL_CLOSED is True and Redis is down."""
+async def test_check_limits_fail_closed_default() -> None:
+    """Verify check_limits fails closed by default (LIMITS_FAIL_OPEN=False) when Redis is down."""
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "LIMITS_FAIL_CLOSED", True)
+    # Default is FAIL CLOSED (LIMITS_FAIL_OPEN is False)
+    assert settings.LIMITS_FAIL_OPEN is False
     agent_id = uuid4()
     limits = [PolicyLimit(id="L1", max_calls_per_min=10)]
 
     res = await check_limits(None, agent_id, "tool.y", {}, limits)
     assert res.allowed is False
     assert res.degraded is True
-    assert res.reason == "limits_service_unavailable"
+    assert res.reason == "limits_unavailable"
+
 

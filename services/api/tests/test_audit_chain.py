@@ -14,6 +14,8 @@ from app.audit.service import (
 from app.audit.verifier import verify_audit_chain
 from app.models.audit import AuditLog
 
+pytestmark = [pytest.mark.postgres]
+
 
 @pytest.mark.asyncio
 async def test_audit_chain_sequential_integrity(db_session: AsyncSession) -> None:

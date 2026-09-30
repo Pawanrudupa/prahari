@@ -112,8 +112,36 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
             )
 
     # 4. Verify HMAC-signed checkpoints against chain state
+    from app.core.config import settings
+
+    # Detect if checkpoints table was completely wiped on a long chain
+    chk_int = settings.AUDIT_CHECKPOINT_INTERVAL
+    if chk_int > 0 and total >= chk_int and len(checkpoints) == 0:
+        return AuditVerificationResult(
+            valid=False,
+            total_records=total,
+            checkpoints_verified=0,
+            broken_seq=chk_int,
+            error=(
+                "Missing checkpoints detected: audit chain records exceed "
+                "checkpoint interval but no checkpoints exist"
+            ),
+        )
+
+    prev_cp_seq = 0
     for cp in checkpoints:
-        # 4a. Checkpoint cryptographic signature verification
+        # 4a. Checkpoint sequence monotonicity
+        if cp.seq <= prev_cp_seq:
+            return AuditVerificationResult(
+                valid=False,
+                total_records=total,
+                checkpoints_verified=0,
+                broken_seq=cp.seq,
+                error=f"Checkpoint sequence non-monotonic or corrupted at seq {cp.seq}",
+            )
+        prev_cp_seq = cp.seq
+
+        # 4b. Checkpoint cryptographic signature verification
         expected_sig = sign_checkpoint(cp.seq, cp.head_hash)
         if not hmac.compare_digest(cp.signature, expected_sig):
             return AuditVerificationResult(
@@ -124,7 +152,7 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
                 error=f"Audit checkpoint signature invalid or tampered at seq {cp.seq}",
             )
 
-        # 4b. Anti-tail-truncation: chain must contain at least the checkpointed seq
+        # 4c. Anti-tail-truncation: chain must contain at least the checkpointed seq
         if total < cp.seq:
             return AuditVerificationResult(
                 valid=False,
@@ -137,7 +165,7 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
                 ),
             )
 
-        # 4c. Anti-chain-rewriting: record at cp.seq must match checkpoint's signed head_hash
+        # 4d. Anti-chain-rewriting: record at cp.seq must match checkpoint's signed head_hash
         chain_rec = records[cp.seq - 1]
         if chain_rec.hash != cp.head_hash:
             return AuditVerificationResult(
@@ -154,4 +182,5 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
     return AuditVerificationResult(
         valid=True, total_records=total, checkpoints_verified=len(checkpoints)
     )
+
 

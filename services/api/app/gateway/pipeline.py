@@ -1,5 +1,4 @@
-"""Gateway decision pipeline implementing the 8-step execution path with fail-closed safety."""
-
+import contextlib
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -10,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import append_audit_log, build_audit_payload
 from app.auth.service import authenticate_agent
+from app.events.bus import publish_event
 from app.gateway.schemas import ToolCallRequest, ToolCallResponse
 from app.limits.service import check_limits
-from app.models.agent import Agent
+from app.models.agent import Agent, AgentToolGrant
 from app.models.policy import Policy, PolicyVersion
+from app.models.tool import Tool
 from app.policy.engine import evaluate_policy
 from app.policy.loader import load_policy_from_file, load_policy_from_yaml
 from app.policy.schemas import EvaluationContext, PolicyDefinition
@@ -102,11 +103,70 @@ async def execute_gateway_pipeline(
                 outcome="deny",
                 reason="malformed_tool_name",
             )
-            await append_audit_log(session, audit_payload)
+            audit_entry = await append_audit_log(session, audit_payload)
+            with contextlib.suppress(Exception):
+                await publish_event("action.decided", {
+                    "decision_id": str(decision_id),
+                    "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
+                    "agent_id": str(agent_id),
+                    "agent_name": agent.name,
+                    "tool_id": req.tool,
+                    "outcome": "deny",
+                    "rule_id": None,
+                    "risk_score": 0.0,
+                    "session_id": str(req.session_id) if req.session_id else None,
+                    "parent_action_id": None,
+                    "audit_seq": audit_entry.seq,
+                    "data_classes": [],
+                    "latency_ms": 0.0,
+                })
             return ToolCallResponse(
                 decision="deny",
                 rule_id=None,
                 reason="malformed_tool_name",
+                decision_id=decision_id,
+            )
+
+        # Step 2b: Tool Grant Capability Check (Enforced if grants exist for agent)
+        grants_stmt = (
+            select(Tool.name)
+            .join(AgentToolGrant, AgentToolGrant.tool_id == Tool.id)
+            .where(AgentToolGrant.agent_id == agent_id)
+        )
+        granted_res = await session.execute(grants_stmt)
+        granted_tools = set(granted_res.scalars().all())
+
+        if granted_tools and req.tool not in granted_tools:
+            audit_payload = build_audit_payload(
+                agent_id=agent_id,
+                tool=req.tool,
+                args=req.args,
+                data_classes=[],
+                outcome="deny",
+                reason="tool_not_granted",
+                session_id=req.session_id,
+            )
+            audit_entry = await append_audit_log(session, audit_payload)
+            with contextlib.suppress(Exception):
+                await publish_event("action.decided", {
+                    "decision_id": str(decision_id),
+                    "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
+                    "agent_id": str(agent_id),
+                    "agent_name": agent.name,
+                    "tool_id": req.tool,
+                    "outcome": "deny",
+                    "rule_id": None,
+                    "risk_score": 0.0,
+                    "session_id": str(req.session_id) if req.session_id else None,
+                    "parent_action_id": None,
+                    "audit_seq": audit_entry.seq,
+                    "data_classes": [],
+                    "latency_ms": 0.0,
+                })
+            return ToolCallResponse(
+                decision="deny",
+                rule_id=None,
+                reason="tool_not_granted",
                 decision_id=decision_id,
             )
 
@@ -153,22 +213,23 @@ async def execute_gateway_pipeline(
                 rule_id = limit_res.limit_id
                 reason = limit_res.reason or "limit_exceeded"
 
-            # Record degraded limits event if Redis was unavailable for configured limits
+            # Record degraded or unavailable limits event if Redis was down
             if limit_res.degraded and active_policy.limits:
+                is_unavail = limit_res.reason == "limits_unavailable"
+                limit_event_type = "limits.unavailable" if is_unavail else "limits.degraded"
                 degraded_payload = build_audit_payload(
                     agent_id=agent_id,
                     tool=req.tool,
                     args=req.args,
                     data_classes=data_classes,
-                    outcome="degraded",
+                    outcome="deny" if limit_event_type == "limits.unavailable" else "degraded",
                     rule_id=limit_res.limit_id,
                     policy_version=active_policy.version,
                     reason=limit_res.reason or "redis_unavailable_in_memory_fallback",
                     session_id=req.session_id,
-                    event_type="limits.degraded",
+                    event_type=limit_event_type,
                 )
                 await append_audit_log(session, degraded_payload)
-
 
         # Step 7: Risk Score (advisory signal - can tighten allow -> escalate, never permit deny)
         if outcome == "allow" and injection_score >= 0.7:
@@ -187,7 +248,25 @@ async def execute_gateway_pipeline(
             reason=reason,
             session_id=req.session_id,
         )
-        await append_audit_log(session, audit_payload)
+        audit_entry = await append_audit_log(session, audit_payload)
+
+        # Step 9: Best-effort event publishing to Redis pub/sub and WebSocket streams
+        with contextlib.suppress(Exception):
+            await publish_event("action.decided", {
+                "decision_id": str(decision_id),
+                "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
+                "agent_id": str(agent_id),
+                "agent_name": agent.name,
+                "tool_id": req.tool,
+                "outcome": outcome,
+                "rule_id": rule_id,
+                "risk_score": float(injection_score),
+                "session_id": str(req.session_id) if req.session_id else None,
+                "parent_action_id": None,
+                "audit_seq": audit_entry.seq,
+                "data_classes": data_classes,
+                "latency_ms": 0.0,
+            })
 
         approval_id: UUID | None = uuid4() if outcome == "escalate" else None
 
@@ -213,7 +292,23 @@ async def execute_gateway_pipeline(
                 reason="engine_error",
                 session_id=req.session_id,
             )
-            await append_audit_log(session, audit_payload)
+            err_entry = await append_audit_log(session, audit_payload)
+            with contextlib.suppress(Exception):
+                await publish_event("action.decided", {
+                    "decision_id": str(decision_id),
+                    "action_id": str(err_entry.payload_json.get("action_id", decision_id)),
+                    "agent_id": str(agent_id),
+                    "agent_name": agent.name if agent else "unknown",
+                    "tool_id": req.tool,
+                    "outcome": "deny",
+                    "rule_id": None,
+                    "risk_score": 0.0,
+                    "session_id": str(req.session_id) if req.session_id else None,
+                    "parent_action_id": None,
+                    "audit_seq": err_entry.seq,
+                    "data_classes": [],
+                    "latency_ms": 0.0,
+                })
         except Exception:
             pass
 
@@ -223,3 +318,4 @@ async def execute_gateway_pipeline(
             reason="engine_error",
             decision_id=decision_id,
         )
+

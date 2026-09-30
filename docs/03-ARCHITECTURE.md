@@ -62,16 +62,19 @@ docker-compose.yml
 ```
 
 ## Security & Governance Invariants
-- **Admin authentication**: Administrative and security auditor endpoints (`/v1/agents`, `/v1/audit/verify`, `/v1/audit/checkpoint`) require a valid `ADMIN_TOKEN` via `Authorization: Bearer <token>` or `X-Admin-Token`.
+- **Admin authentication & web session tokens**: Administrative and security auditor endpoints (`/v1/agents`, `/v1/audit/*`, `/v1/tools`) require an admin token or signed session token. `ADMIN_TOKEN` is never exposed to browser client code; the web console logs in via `POST /v1/auth/login` to obtain a signed, short-lived session token (with a clearly marked `/v1/auth/dev-session` for local dev). `/ws/events` and `/v1/graph/snapshot` require authentication.
 - **Agent API keys**: Hashed at rest using SHA-256; fast lookup by key prefix + constant-time comparison (`hmac.compare_digest`); unknown or disabled agents receive HTTP 401 and an `agent.auth_failed` audit event is logged.
+- **Capability grants enforcement**: `agent_tool_grants` are **enforced** at Step 2b. If an agent has grants defined, calling any tool outside its granted list yields `deny` with reason `tool_not_granted`.
 - **Append-only hash chain**: Each record stores `prev_hash` and `hash = SHA256(prev_hash || canonical_json(payload))`. Serialized using PostgreSQL transaction advisory lock (`pg_advisory_xact_lock(740101)`) to guarantee zero chain forks under concurrent gateway requests.
-- **Audit anti-truncation & anti-rewriting checkpoints**: Periodic HMAC-SHA256 signed checkpoints `(seq, head_hash)` signed with server secret `AUDIT_HMAC_KEY` protect against database truncation (tail deletion) or whole-chain recomputation attacks. `/v1/audit/verify` verifies both internal chain linkage and all signed checkpoints.
+- **Audit checkpoints & truncation window**: Signed HMAC-SHA256 checkpoints `(seq, head_hash)` with `AUDIT_HMAC_KEY` are stored every `AUDIT_CHECKPOINT_INTERVAL` appends. `/v1/audit/verify` validates checkpoint monotonicity, detects missing/deleted checkpoints, and flags tail truncation and whole-chain rewriting. The maximum truncation window is bounded by the checkpoint interval. Outside development, server startup aborts if default placeholder secrets are detected.
+- **Event publishing best-effort guarantee**: Event publishing to Redis pub/sub and WebSocket streams occurs strictly after the audit log transaction commits. Event bus failures are caught and logged, and will never fail or alter a gateway tool-call decision.
 - **Throughput design & trade-off**: A single global hash chain serializes all appends via advisory locks, capping write throughput to sequential DB transaction latency. This is an intentional MVP governance trade-off for absolute audit integrity before multi-tenant partition/sharding.
-- **Redis-down governance behavior**: Configurable via `LIMITS_FAIL_CLOSED`. When `true`, gateway fails closed (`deny` with `limits_service_unavailable`) if Redis is down. When `false`, falls back to in-memory tracking and records an explicit `limits.degraded` audit event.
-- **Detector stubs (Phase 1)**: In Phase 1, prompt injection scanning and PII detection run heuristic stubs (`app/stubs/`) to validate the pipeline flow without heavy ML dependencies. Full scikit-learn/transformer models are introduced in Phase 3 (ML signals) and Phase 5 (DPDP & PII).
+- **Redis-down governance behavior**: Configurable via `LIMITS_FAIL_OPEN` (default `false`). When `false`, gateway fails closed (`deny` with `limits_unavailable`) if Redis is down and logs a `limits.unavailable` audit event. When `true`, falls back to in-memory tracking and logs `limits.degraded`.
+- **Detector stubs (Phase 1/2)**: Prompt injection scanning and PII detection run server-side heuristic stubs (`app/stubs/`) to validate the pipeline flow. Simulator does not send client-declared injection scores; all PII in simulator is synthetic and fake. Full ML models are introduced in Phase 3 and Phase 5.
 - **RAG/LLM output safety**: Escaped in UI (no HTML/script injection). Retrieved policy text is treated as data, not instructions.
 - **Fail-closed**: Any unexpected exception in the decision path yields `deny` with reason `engine_error`.
 - **Zero raw PII/secrets**: No raw arguments or secrets are stored in audit logs or database fixtures. Only canonical argument hashes (`args_hash`) and detected data-class labels are stored.
+
 
 ## Observability
 Structured JSON logs, OpenTelemetry traces on the pipeline steps, `/metrics` (Prometheus format).

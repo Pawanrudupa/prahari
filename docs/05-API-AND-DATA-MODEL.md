@@ -45,9 +45,17 @@ limits:
 ```
 Evaluation precedence: deny > escalate > redact > allow > default. Every decision returns `rule_id` and `policy_version`.
 
+## Capability Grants & Enforcement
+- `agent_tool_grants(agent_id, tool_id)`: **ENFORCED** at gateway Step 2b. If an agent has grants registered, attempting to execute any tool outside its granted list yields deterministic `deny` with reason `tool_not_granted`. If an agent has no specific grants registered, general policy rules determine access.
+
 ## REST endpoints (v1)
-- `POST /v1/gateway/tool-call` body `{agent_key, session_id, tool, args, purpose?, context?{tool_outputs[]}}` -> `{decision, rule_id, reason, redacted_args?, approval_id?, decision_id}`
-- `GET/POST /v1/agents`, `GET/POST /v1/tools`, `POST /v1/agents/{id}/grants`
+- `POST /v1/auth/login` body `{admin_token}` -> `{session_token, token_type, expires_in, mode}` (exchanges admin secret for browser session token; admin secret is never exposed in browser)
+- `GET /v1/auth/dev-session` -> `{session_token, mode: "development-bypass"}` (development-only bypass, rejected in production)
+- `POST /v1/gateway/tool-call` body `{agent_key, session_id, tool, args, purpose?, context?{user_prompt, tool_outputs[]}}` -> `{decision, rule_id, reason, redacted_args?, approval_id?, decision_id, data_classes}`
+- `GET/POST /v1/agents` (admin only)
+- `GET /v1/tools` (admin/session), `POST /v1/tools` (admin only)
+- `POST /v1/agents/{id}/grants` (admin only), `GET /v1/agents/{id}/grants` (admin/session)
+- `GET /v1/graph/snapshot` -> `{latest_audit_seq, agents, tools, grants, recent_decisions}` (for 3D constellation initial load & subscribe-then-snapshot deduplication)
 - `GET/POST /v1/policies`, `POST /v1/policies/{id}/versions`, `POST /v1/policies/{id}/activate`, `POST /v1/policies/{id}/test`
 - `POST /v1/policies/author` body `{instruction}` -> draft YAML + generated test cases
 - `POST /v1/documents` (upload policy doc), `GET /v1/documents`
@@ -56,15 +64,45 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `GET /v1/approvals?status=pending`, `POST /v1/approvals/{id}/decide`
 - `POST /v1/replay` body `{policy_version_id|yaml, from, to}` -> diff of outcomes
 - `POST /v1/redteam/run` body `{scenarios[]}`, `GET /v1/redteam/coverage`
-- `GET /v1/audit/verify`, `GET /v1/reports/dpdp?from=&to=`
+- `GET /v1/audit/verify` (admin only), `POST /v1/audit/checkpoint` (admin only)
+- `GET /v1/reports/dpdp?from=&to=`
 - `POST /v1/incidents/{id}/circuit-break`
 
 ## WebSocket `/ws/events`
-Event envelope: `{type, ts, payload}`. Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, `policy.activated`, `budget.warning`.
-`action.decided` payload: `{decision_id, agent_id, tool_id, outcome, rule_id, risk_score, session_id, parent_action_id}`.
+Authentication: Requires `?token=<session_or_admin_token>` or `Authorization: Bearer <token>`.
+Client queue: Bounded per-client buffer (`maxsize=1000`) with oldest-drop on lag to prevent memory leaks.
+Heartbeats: Periodic server ping/heartbeat every 25s; client ping responded with pong.
+Event envelope: `{event_id, timestamp, type, payload}`.
+Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, `policy.activated`, `budget.warning`.
+
+`action.decided` payload schema:
+```json
+{
+  "decision_id": "uuid",
+  "action_id": "uuid",
+  "agent_id": "uuid",
+  "agent_name": "Support-Bot",
+  "tool_id": "crm.read_ticket",
+  "outcome": "allow",
+  "rule_id": "R1-allow-read-tickets",
+  "risk_score": 0.0,
+  "session_id": "uuid",
+  "parent_action_id": null,
+  "audit_seq": 105,
+  "data_classes": [],
+  "latency_ms": 12.3
+}
+```
+
+## Checkpoint Truncation Window & Anti-Tamper Security
+- Checkpoints store `(seq, head_hash, signature)` using HMAC-SHA256 (`AUDIT_HMAC_KEY`).
+- Auto-checkpointed every `AUDIT_CHECKPOINT_INTERVAL` appends (default 50).
+- **Between-checkpoint truncation window**: Deleting records appended after the most recent checkpoint ($k \times N$) up to $(k \times N) + m$ can theoretically occur before the next checkpoint is persisted. `AUDIT_CHECKPOINT_INTERVAL` bounds this exposure; `/v1/audit/verify` flags if uncheckpointed rows exceed the interval or if checkpoint sequence monotonicity is broken.
+- **Production Guard**: Server refuses startup if default placeholder secrets (`ADMIN_TOKEN`, `AUDIT_HMAC_KEY`, `SESSION_SECRET_KEY`) are detected outside `ENV=development`.
 
 ## PII detectors (India-focused)
 Aadhaar (12 digits, Verhoeff checksum), PAN (`[A-Z]{5}[0-9]{4}[A-Z]`), Indian mobile (`(\+91)?[6-9]\d{9}`), email, IFSC, UPI ID. Detectors must return data class labels only, never store raw values in logs.
 
 ## DPDP evidence report contents
 Per agent and period: actions touching personal data, declared purpose (or "missing"), redactions applied, escalations and approver, retention flags, audit-chain verification result. Footer disclaimer: not legal advice.
+

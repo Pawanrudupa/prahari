@@ -104,6 +104,15 @@ async def append_audit_log(session: AsyncSession, payload: dict[str, Any]) -> Au
         session.add(entry)
         await session.commit()
         await session.refresh(entry)
+
+        # Automatic checkpoint every N appends per settings
+        from app.core.config import settings
+
+        interval = settings.AUDIT_CHECKPOINT_INTERVAL
+        if interval > 0 and entry.seq % interval == 0:
+            with contextlib.suppress(Exception):
+                await create_checkpoint(session)
+
         return entry
 
 

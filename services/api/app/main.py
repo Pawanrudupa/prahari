@@ -9,7 +9,8 @@ from app.core.config import settings
 from app.core.database import engine
 from app.core.redis import redis_client
 from app.gateway.router import router as gateway_router
-from app.routers import agents, audit, health
+from app.routers import agents, audit, auth, graph, health, tools
+from app.ws.router import router as ws_router
 
 
 @asynccontextmanager
@@ -42,8 +43,13 @@ def create_app() -> FastAPI:
 
     # Register all router modules
     app.include_router(health.router)
+    app.include_router(auth.router)
     app.include_router(gateway_router)
     app.include_router(audit.router)
     app.include_router(agents.router)
+    app.include_router(tools.router)
+    app.include_router(graph.router)
+    app.include_router(ws_router)
 
     return app
+

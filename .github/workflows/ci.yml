@@ -38,6 +38,10 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://prahari:prahari@localhost:5432/prahari
       REDIS_URL: redis://localhost:6379/0
+      REQUIRE_POSTGRES: "true"
+      ADMIN_TOKEN: "ci-admin-token-super-secret-key-32chars"
+      AUDIT_HMAC_KEY: "ci-audit-checkpoint-hmac-secret-key-32chars"
+      SESSION_SECRET_KEY: "ci-session-secret-key-super-secret-32chars"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -49,8 +53,12 @@ jobs:
         run: uv run ruff check .
       - name: Type-check (mypy)
         run: uv run mypy .
-      - name: Test (pytest)
+      - name: Run Alembic migrations
+        run: uv run alembic upgrade head
+      - name: Test (pytest against real Postgres & Redis)
         run: uv run pytest -v
+      - name: Gateway Latency Benchmark (Target: p95 < 50ms)
+        run: uv run python benchmarks/bench_gateway.py
 
   web-lint-test:
     runs-on: ubuntu-latest

@@ -204,22 +204,23 @@ async def check_limits(
             except Exception:
                 # If Redis operation fails, mark degraded and fall back
                 is_degraded = True
-                if settings.LIMITS_FAIL_CLOSED:
+                if not settings.LIMITS_FAIL_OPEN:
                     return LimitCheckResult(
                         allowed=False,
-                        reason="limits_service_unavailable",
+                        reason="limits_unavailable",
                         limit_id=limit.id,
                         degraded=True,
                     )
         else:
             is_degraded = True
-            if settings.LIMITS_FAIL_CLOSED:
+            if not settings.LIMITS_FAIL_OPEN:
                 return LimitCheckResult(
                     allowed=False,
-                    reason="limits_service_unavailable",
+                    reason="limits_unavailable",
                     limit_id=limit.id,
                     degraded=True,
                 )
+
 
         # Fallback to in-memory tracker
         result = in_memory_tracker.check_and_increment(agent_str, sig, limit, spend_amount)

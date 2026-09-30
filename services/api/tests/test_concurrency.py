@@ -1,9 +1,12 @@
 """Concurrency tests verifying serialized audit appends under parallel load."""
 
 import asyncio
+import contextlib
+import os
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.audit.service import append_audit_log, build_audit_payload
@@ -11,6 +14,7 @@ from app.audit.verifier import verify_audit_chain
 from app.models import Base
 
 
+@pytest.mark.postgres
 @pytest.mark.asyncio
 async def test_concurrent_50_parallel_appends() -> None:
     """
@@ -18,9 +22,20 @@ async def test_concurrent_50_parallel_appends() -> None:
     Verify that lock serialization prevents chain forks, sequence gaps,
     and produces an intact, 100% valid cryptographic hash chain of 50 records.
     """
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    db_url = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
+    is_postgres = bool(db_url and ("postgres" in db_url))
+
+    if is_postgres:
+        engine = create_async_engine(db_url, echo=False)
+        async with engine.begin() as conn:
+            with contextlib.suppress(Exception):
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await conn.run_sync(Base.metadata.create_all)
+    else:
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
 
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

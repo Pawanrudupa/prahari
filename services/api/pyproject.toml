@@ -28,6 +28,10 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+pythonpath = ["../..", "."]
+markers = [
+    "postgres: marks tests that require real PostgreSQL and Redis databases",
+]
 
 [tool.ruff]
 target-version = "py312"
@@ -38,11 +42,15 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "A", "T20", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 "benchmarks/*" = ["T201"]
+"**/*simulator*/**" = ["T201"]
+"**/cli.py" = ["T201"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
+mypy_path = ["../..", "."]
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = ["redis.*", "pgvector.*", "yaml.*"]
