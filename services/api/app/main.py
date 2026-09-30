@@ -8,7 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine
 from app.core.redis import redis_client
-from app.routers import health
+from app.gateway.router import router as gateway_router
+from app.routers import agents, audit, health
 
 
 @asynccontextmanager
@@ -39,6 +40,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Register all router modules
     app.include_router(health.router)
+    app.include_router(gateway_router)
+    app.include_router(audit.router)
+    app.include_router(agents.router)
 
     return app

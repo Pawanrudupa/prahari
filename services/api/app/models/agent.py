@@ -11,6 +11,8 @@ class Agent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    api_key_prefix: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     api_key_hash: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
 

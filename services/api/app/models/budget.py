@@ -31,18 +31,14 @@ class Incident(UUIDPrimaryKeyMixin, Base):
     opened_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    closed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class RedteamRun(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "redteam_runs"
 
     scenario: Mapped[str] = mapped_column(String(255), nullable=False)
-    owasp_ids: Mapped[list[str] | None] = mapped_column(
-        ARRAY(String), nullable=True
-    )
+    owasp_ids: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     result: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

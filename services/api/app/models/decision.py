@@ -35,7 +35,5 @@ class Approval(UUIDPrimaryKeyMixin, Base):
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     approver: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    decided_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

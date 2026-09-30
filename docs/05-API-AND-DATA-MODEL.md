@@ -1,7 +1,7 @@
 # 05 — API and Data Model
 
 ## Tables (PostgreSQL)
-- `agents(id, name, owner, api_key_hash, status, created_at)`
+- `agents(id, name, owner, role, api_key_prefix, api_key_hash, status, created_at)`
 - `tools(id, name, server, schema_json, sensitivity, created_at)`
 - `agent_tool_grants(agent_id, tool_id)`
 - `policies(id, name, status, active_version_id)`

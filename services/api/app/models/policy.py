@@ -16,7 +16,7 @@ class Policy(UUIDPrimaryKeyMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     active_version_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("policy_versions.id"), nullable=True
+        ForeignKey("policy_versions.id", use_alter=True), nullable=True
     )
 
 

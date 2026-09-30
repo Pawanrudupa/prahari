@@ -22,6 +22,8 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "types-pyyaml>=6.0.12",
+    "aiosqlite>=0.20.0",
 ]
 
 [tool.pytest.ini_options]
@@ -34,13 +36,16 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "A", "T20", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+"benchmarks/*" = ["T201"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["redis.*", "pgvector.*"]
+module = ["redis.*", "pgvector.*", "yaml.*"]
 ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]

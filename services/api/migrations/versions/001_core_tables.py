@@ -27,6 +27,8 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("owner", sa.String(255), nullable=False),
+        sa.Column("role", sa.String(50), nullable=True),
+        sa.Column("api_key_prefix", sa.String(32), index=True, nullable=False),
         sa.Column("api_key_hash", sa.Text(), nullable=False),
         sa.Column("status", sa.String(20), nullable=False, server_default="active"),
         sa.Column(
