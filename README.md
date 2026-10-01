@@ -1,8 +1,11 @@
 # Prahari (प्रहरी) — Agent Governance Console
 
+[![CI](https://github.com/Pawanrudupa/prahari/actions/workflows/ci.yml/badge.svg)](https://github.com/Pawanrudupa/prahari/actions/workflows/ci.yml)
+
 > A sentinel for AI agents. Every tool call an agent makes is identified, checked against policy, risk-scored, and either allowed, redacted, blocked, or escalated to a human — and you can *watch it happen* in a live 3D control room.
 
 **Status:** pre-alpha, greenfield. Start with `KICKOFF_PROMPT.md`.
+
 
 ## What it is
 A governance proxy that sits between AI agents and their tools (MCP servers, HTTP APIs). It combines:

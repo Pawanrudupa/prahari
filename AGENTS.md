@@ -40,4 +40,5 @@ Prahari: Agent Governance Console. Governance proxy for AI agents + RAG explanat
 - `python -m services.simulator --scenario all --seed 42`
 
 ## Definition of Done
-Lint/types clean, tests added and passing, docs updated, no secrets, decision path still deterministic, demoable.
+Lint/types clean, tests added and passing, docs updated, no secrets, decision path still deterministic, demoable. Work is not complete until CI on main is green; include the run URL in your report.
+

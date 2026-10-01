@@ -79,4 +79,3 @@ async def require_session_or_admin_token(
         detail="Unauthorized: invalid or expired session/admin token",
         headers={"WWW-Authenticate": "Bearer"},
     )
-

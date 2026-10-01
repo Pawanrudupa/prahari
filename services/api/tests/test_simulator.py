@@ -1,6 +1,5 @@
 """Tests verifying simulator determinism, synthetic fake PII, and scenario generators."""
 
-
 from services.simulator.clock import SimulationClock
 from services.simulator.fixtures import (
     SYNTHETIC_FAKE_AADHAAR,

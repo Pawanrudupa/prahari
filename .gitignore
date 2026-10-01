@@ -24,3 +24,7 @@ pgdata/
 # Build artifacts
 *.egg-info/
 *.tsbuildinfo
+
+# Scratch workspace
+scratch/
+

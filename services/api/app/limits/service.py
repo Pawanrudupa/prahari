@@ -227,7 +227,6 @@ async def check_limits(
                     degraded=True,
                 )
 
-
         # Fallback to in-memory tracker
         result = in_memory_tracker.check_and_increment(agent_str, sig, limit, spend_amount)
         if not result.allowed:

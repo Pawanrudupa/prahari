@@ -291,13 +291,10 @@ async def test_audit_checkpoint_tampered_signature_detected(
     await create_checkpoint(db_session)
 
     # Corrupt the signature in AuditCheckpoint table
-    await db_session.execute(
-        update(AuditCheckpoint).values(signature="f" * 64)
-    )
+    await db_session.execute(update(AuditCheckpoint).values(signature="f" * 64))
     await db_session.commit()
 
     res = await verify_audit_chain(db_session)
     assert res.valid is False
     assert res.error is not None
     assert "signature invalid or tampered" in res.error
-

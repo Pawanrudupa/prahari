@@ -14,7 +14,6 @@ from app.policy.schemas import PolicyLimit
 pytestmark = [pytest.mark.postgres]
 
 
-
 def test_stable_call_signature_deterministic() -> None:
     """Verify call signature hash is stable across dictionary key order variations."""
     agent_id = uuid4()
@@ -132,5 +131,3 @@ async def test_check_limits_fail_closed_default(monkeypatch: pytest.MonkeyPatch)
     assert res.allowed is False
     assert res.degraded is True
     assert res.reason == "limits_unavailable"
-
-

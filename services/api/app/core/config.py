@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # Governance rule: limits fail closed unless explicitly set to fail open
     LIMITS_FAIL_OPEN: bool = False
 
+    # Database connection pool sizing:
+    # pool_size=50 with max_overflow=20 ensures up to 70 concurrent gateway requests
+    # can execute simultaneously without QueuePool exhaustion.
+    DB_POOL_SIZE: int = 50
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: float = 30.0
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
@@ -56,4 +63,3 @@ def validate_security_configuration(s: Settings) -> None:
 
 settings = Settings()
 validate_security_configuration(settings)
-

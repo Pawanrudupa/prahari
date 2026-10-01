@@ -4,11 +4,12 @@ import asyncio
 import contextlib
 import os
 import statistics
+import sys
 import time
 from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
@@ -50,6 +51,15 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
             with contextlib.suppress(Exception):
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await conn.run_sync(Base.metadata.create_all)
+            # Isolate benchmark data from any prior test data
+            with contextlib.suppress(Exception):
+                await conn.execute(
+                    text(
+                        "TRUNCATE TABLE agent_tool_grants, agents, tools, "
+                        "audit_log, audit_checkpoints CASCADE"
+                    )
+                )
+
     else:
         print("Running benchmark against in-memory SQLite fallback")
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -85,13 +95,22 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
             status="active",
         )
         session.add(agent)
-        tool = Tool(
-            id=uuid4(),
-            name="crm.read_ticket",
-            server="crm-mcp",
-            sensitivity="normal",
-        )
-        session.add(tool)
+
+        stmt = select(Tool).where(Tool.name == "crm.read_ticket")
+        existing_tool = (await session.execute(stmt)).scalar_one_or_none()
+        if existing_tool:
+            tool = existing_tool
+        else:
+            tool = Tool(
+                id=uuid4(),
+                name="crm.read_ticket",
+                server="crm-mcp",
+                sensitivity="normal",
+            )
+            session.add(tool)
+
+        await session.flush()
+
         grant = AgentToolGrant(agent_id=agent.id, tool_id=tool.id)
         session.add(grant)
         await session.commit()
@@ -123,6 +142,17 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
             await execute_gateway_pipeline(session, redis_client, req, active_policy=policy)
             elapsed_ms = (time.perf_counter() - start) * 1000.0
             latencies_ms.append(elapsed_ms)
+
+    # Clean up benchmark data on teardown
+    if is_postgres:
+        async with engine.begin() as conn:
+            with contextlib.suppress(Exception):
+                await conn.execute(
+                    text(
+                        "TRUNCATE TABLE agent_tool_grants, agents, tools, "
+                        "audit_log, audit_checkpoints CASCADE"
+                    )
+                )
 
     if redis_client is not None:
         await redis_client.aclose()
@@ -166,9 +196,11 @@ def main() -> None:
     p95 = results["p95"]
     if p95 < 50.0:
         print(f"RESULT: PASS - p95 ({p95:.2f} ms) is well within the 50 ms budget!")
+        print("=" * 60)
     else:
         print(f"RESULT: FAIL - p95 ({p95:.2f} ms) exceeds the 50 ms budget!")
-    print("=" * 60)
+        print("=" * 60)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -75,9 +75,7 @@ async def test_agent_registration_and_gateway_allow(
 
 
 @pytest.mark.asyncio
-async def test_gateway_redact_pii(
-    client: AsyncClient, admin_headers: dict[str, str]
-) -> None:
+async def test_gateway_redact_pii(client: AsyncClient, admin_headers: dict[str, str]) -> None:
     """Verify tool call with personal data is redacted per policy R2."""
     # Register support agent
     reg_resp = await client.post(
@@ -391,4 +389,3 @@ async def test_limits_degraded_audit_logged_without_redis(
     assert degraded_entry is not None
     assert degraded_entry.payload_json["outcome"] == "degraded"
     assert "redis_unavailable" in degraded_entry.payload_json["reason"]
-

@@ -90,4 +90,3 @@ async def create_ws_ticket_endpoint(
     user_sub = auth.get("sub", "operator")
     ticket = await create_ws_ticket(user_payload={"sub": user_sub}, ttl_seconds=30)
     return WSTicketResponse(ticket=ticket, expires_in=30)
-

@@ -73,4 +73,3 @@ async def create_checkpoint_endpoint(
         signature=checkpoint.signature,
         created_at=checkpoint.created_at,
     )
-

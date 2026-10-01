@@ -105,21 +105,24 @@ async def execute_gateway_pipeline(
             )
             audit_entry = await append_audit_log(session, audit_payload)
             with contextlib.suppress(Exception):
-                await publish_event("action.decided", {
-                    "decision_id": str(decision_id),
-                    "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
-                    "agent_id": str(agent_id),
-                    "agent_name": agent.name,
-                    "tool_id": req.tool,
-                    "outcome": "deny",
-                    "rule_id": None,
-                    "risk_score": 0.0,
-                    "session_id": str(req.session_id) if req.session_id else None,
-                    "parent_action_id": None,
-                    "audit_seq": audit_entry.seq,
-                    "data_classes": [],
-                    "latency_ms": 0.0,
-                })
+                await publish_event(
+                    "action.decided",
+                    {
+                        "decision_id": str(decision_id),
+                        "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
+                        "agent_id": str(agent_id),
+                        "agent_name": agent.name,
+                        "tool_id": req.tool,
+                        "outcome": "deny",
+                        "rule_id": None,
+                        "risk_score": 0.0,
+                        "session_id": str(req.session_id) if req.session_id else None,
+                        "parent_action_id": None,
+                        "audit_seq": audit_entry.seq,
+                        "data_classes": [],
+                        "latency_ms": 0.0,
+                    },
+                )
             return ToolCallResponse(
                 decision="deny",
                 rule_id=None,
@@ -148,21 +151,24 @@ async def execute_gateway_pipeline(
             )
             audit_entry = await append_audit_log(session, audit_payload)
             with contextlib.suppress(Exception):
-                await publish_event("action.decided", {
-                    "decision_id": str(decision_id),
-                    "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
-                    "agent_id": str(agent_id),
-                    "agent_name": agent.name,
-                    "tool_id": req.tool,
-                    "outcome": "deny",
-                    "rule_id": None,
-                    "risk_score": 0.0,
-                    "session_id": str(req.session_id) if req.session_id else None,
-                    "parent_action_id": None,
-                    "audit_seq": audit_entry.seq,
-                    "data_classes": [],
-                    "latency_ms": 0.0,
-                })
+                await publish_event(
+                    "action.decided",
+                    {
+                        "decision_id": str(decision_id),
+                        "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
+                        "agent_id": str(agent_id),
+                        "agent_name": agent.name,
+                        "tool_id": req.tool,
+                        "outcome": "deny",
+                        "rule_id": None,
+                        "risk_score": 0.0,
+                        "session_id": str(req.session_id) if req.session_id else None,
+                        "parent_action_id": None,
+                        "audit_seq": audit_entry.seq,
+                        "data_classes": [],
+                        "latency_ms": 0.0,
+                    },
+                )
             return ToolCallResponse(
                 decision="deny",
                 rule_id=None,
@@ -252,21 +258,24 @@ async def execute_gateway_pipeline(
 
         # Step 9: Best-effort event publishing to Redis pub/sub and WebSocket streams
         with contextlib.suppress(Exception):
-            await publish_event("action.decided", {
-                "decision_id": str(decision_id),
-                "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
-                "agent_id": str(agent_id),
-                "agent_name": agent.name,
-                "tool_id": req.tool,
-                "outcome": outcome,
-                "rule_id": rule_id,
-                "risk_score": float(injection_score),
-                "session_id": str(req.session_id) if req.session_id else None,
-                "parent_action_id": None,
-                "audit_seq": audit_entry.seq,
-                "data_classes": data_classes,
-                "latency_ms": 0.0,
-            })
+            await publish_event(
+                "action.decided",
+                {
+                    "decision_id": str(decision_id),
+                    "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
+                    "agent_id": str(agent_id),
+                    "agent_name": agent.name,
+                    "tool_id": req.tool,
+                    "outcome": outcome,
+                    "rule_id": rule_id,
+                    "risk_score": float(injection_score),
+                    "session_id": str(req.session_id) if req.session_id else None,
+                    "parent_action_id": None,
+                    "audit_seq": audit_entry.seq,
+                    "data_classes": data_classes,
+                    "latency_ms": 0.0,
+                },
+            )
 
         approval_id: UUID | None = uuid4() if outcome == "escalate" else None
 
@@ -294,21 +303,24 @@ async def execute_gateway_pipeline(
             )
             err_entry = await append_audit_log(session, audit_payload)
             with contextlib.suppress(Exception):
-                await publish_event("action.decided", {
-                    "decision_id": str(decision_id),
-                    "action_id": str(err_entry.payload_json.get("action_id", decision_id)),
-                    "agent_id": str(agent_id),
-                    "agent_name": agent.name if agent else "unknown",
-                    "tool_id": req.tool,
-                    "outcome": "deny",
-                    "rule_id": None,
-                    "risk_score": 0.0,
-                    "session_id": str(req.session_id) if req.session_id else None,
-                    "parent_action_id": None,
-                    "audit_seq": err_entry.seq,
-                    "data_classes": [],
-                    "latency_ms": 0.0,
-                })
+                await publish_event(
+                    "action.decided",
+                    {
+                        "decision_id": str(decision_id),
+                        "action_id": str(err_entry.payload_json.get("action_id", decision_id)),
+                        "agent_id": str(agent_id),
+                        "agent_name": agent.name if agent else "unknown",
+                        "tool_id": req.tool,
+                        "outcome": "deny",
+                        "rule_id": None,
+                        "risk_score": 0.0,
+                        "session_id": str(req.session_id) if req.session_id else None,
+                        "parent_action_id": None,
+                        "audit_seq": err_entry.seq,
+                        "data_classes": [],
+                        "latency_ms": 0.0,
+                    },
+                )
         except Exception:
             pass
 
@@ -318,4 +330,3 @@ async def execute_gateway_pipeline(
             reason="engine_error",
             decision_id=decision_id,
         )
-

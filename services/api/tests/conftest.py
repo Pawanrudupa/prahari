@@ -149,4 +149,15 @@ def _configure_test_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "LIMITS_FAIL_OPEN", True)
 
 
+@pytest.fixture(autouse=True)
+async def _ensure_redis_clean_pool() -> AsyncIterator[None]:
+    """Ensure Redis connection pool resets stale connections across tests."""
+    from app.core.redis import redis_client
 
+    if redis_client is not None:
+        with contextlib.suppress(Exception):
+            await redis_client.connection_pool.disconnect()
+    yield
+    if redis_client is not None:
+        with contextlib.suppress(Exception):
+            await redis_client.connection_pool.disconnect()

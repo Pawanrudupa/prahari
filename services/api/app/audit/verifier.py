@@ -182,5 +182,3 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
     return AuditVerificationResult(
         valid=True, total_records=total, checkpoints_verified=len(checkpoints)
     )
-
-

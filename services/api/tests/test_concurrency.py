@@ -27,8 +27,14 @@ async def test_concurrent_50_parallel_appends() -> None:
 
     from sqlalchemy.pool import NullPool
 
+    # In this concurrency test, 50 parallel workers simultaneously acquire sessions to test
+    # PostgreSQL advisory lock serialization. While production configures QueuePool
+    # (DB_POOL_SIZE=50), tests deliberately use NullPool so that connections are immediately
+    # closed upon task completion, preventing cross-test connection retention, event-loop
+    # conflicts, and pool starvation across test cases.
     if is_postgres:
         engine = create_async_engine(db_url, echo=False, poolclass=NullPool)
+
         async with engine.begin() as conn:
             with contextlib.suppress(Exception):
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))

@@ -409,4 +409,3 @@ async def test_event_bus_queue_overflow_emits_resync() -> None:
         assert "stream.resync" in types
         resync = next(e for e in received if e["type"] == "stream.resync")
         assert resync["payload"]["reason"] == "queue_overflow"
-

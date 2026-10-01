@@ -75,10 +75,7 @@ async def get_graph_snapshot(
     """
     # 1. Fetch agents
     agent_rows = (await db.execute(select(Agent).order_by(Agent.name.asc()))).scalars().all()
-    agents = [
-        AgentNode(id=a.id, name=a.name, role=a.role, status=a.status)
-        for a in agent_rows
-    ]
+    agents = [AgentNode(id=a.id, name=a.name, role=a.role, status=a.status) for a in agent_rows]
 
     # 2. Fetch tools
     tool_rows = (await db.execute(select(Tool).order_by(Tool.name.asc()))).scalars().all()
@@ -89,16 +86,11 @@ async def get_graph_snapshot(
 
     # 3. Fetch grants
     grant_rows = (await db.execute(select(AgentToolGrant))).scalars().all()
-    grants = [
-        GrantEdge(agent_id=g.agent_id, tool_id=g.tool_id)
-        for g in grant_rows
-    ]
+    grants = [GrantEdge(agent_id=g.agent_id, tool_id=g.tool_id) for g in grant_rows]
 
     # 4. Fetch recent decisions and latest audit seq
     recent_audit_rows = (
-        (await db.execute(select(AuditLog).order_by(AuditLog.seq.desc()).limit(50)))
-        .scalars()
-        .all()
+        (await db.execute(select(AuditLog).order_by(AuditLog.seq.desc()).limit(50))).scalars().all()
     )
 
     latest_audit_seq = recent_audit_rows[0].seq if recent_audit_rows else 0

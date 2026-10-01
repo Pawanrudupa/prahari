@@ -24,12 +24,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await engine.dispose()
 
 
-def create_app() -> FastAPI:
+def create_app(enable_lifespan: bool = True) -> FastAPI:
     app = FastAPI(
         title="Prahari API",
         version="0.1.0",
         description="Agent Governance Console API",
-        lifespan=lifespan,
+        lifespan=lifespan if enable_lifespan else None,
     )
 
     app.add_middleware(
@@ -51,4 +51,3 @@ def create_app() -> FastAPI:
     app.include_router(ws_router)
 
     return app
-
