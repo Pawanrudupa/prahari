@@ -1,4 +1,5 @@
 import contextlib
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -12,9 +13,20 @@ from app.gateway.router import router as gateway_router
 from app.routers import agents, audit, auth, graph, health, tools
 from app.ws.router import router as ws_router
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Startup validation: warn if configured DB pool size could exhaust Postgres max_connections
+    total_pool = settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW
+    if total_pool > 30:
+        logger.warning(
+            "Configured database connection pool total (%d) is high. "
+            "Ensure workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) < PostgreSQL max_connections.",
+            total_pool,
+        )
+
     # Startup — graceful: don't crash if dependencies are unavailable
     with contextlib.suppress(Exception):
         await redis_client.ping()
@@ -25,6 +37,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(enable_lifespan: bool = True) -> FastAPI:
+    """
+    Create FastAPI application instance.
+
+    CRITICAL INVARIANT: enable_lifespan defaults strictly to True and is NOT
+    configurable via environment variables. It may only be explicitly set to
+    False by targeted test harnesses requiring isolated background loops.
+    """
     app = FastAPI(
         title="Prahari API",
         version="0.1.0",

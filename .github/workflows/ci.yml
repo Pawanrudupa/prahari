@@ -37,6 +37,7 @@ jobs:
         working-directory: services/api
     env:
       DATABASE_URL: postgresql+asyncpg://prahari:prahari@localhost:5432/prahari
+      BENCH_DATABASE_URL: postgresql+asyncpg://prahari:prahari@localhost:5432/prahari_bench
       REDIS_URL: redis://localhost:6379/0
       REQUIRE_POSTGRES: "true"
       ADMIN_TOKEN: "ci-admin-token-super-secret-key-32chars"

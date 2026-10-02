@@ -32,10 +32,11 @@ class Settings(BaseSettings):
     LIMITS_FAIL_OPEN: bool = False
 
     # Database connection pool sizing:
-    # pool_size=50 with max_overflow=20 ensures up to 70 concurrent gateway requests
-    # can execute simultaneously without QueuePool exhaustion.
-    DB_POOL_SIZE: int = 50
-    DB_MAX_OVERFLOW: int = 20
+    # Sane conservative sizing: pool_size=10, max_overflow=5 (total 15 per worker).
+    # INVARIANT: workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) must stay strictly below
+    # PostgreSQL max_connections (default 100) to prevent connection starvation.
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 5
     DB_POOL_TIMEOUT: float = 30.0
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}

@@ -334,11 +334,10 @@ async def test_dev_session_disabled_in_production_and_token_expiration(
     from app.auth.session import create_session_token, verify_session_token
     from app.core.config import settings
 
-    # 1. In production, dev-session is rejected with 403
+    # 1. In production, dev-session is rejected with 404
     monkeypatch.setattr(settings, "ENV", "production")
     resp = await client.get("/v1/auth/dev-session")
-    assert resp.status_code == 403
-    assert "prohibited" in resp.json()["detail"].lower()
+    assert resp.status_code == 404
 
     # 2. Token expiration
     expired_token = create_session_token(role="admin", ttl_seconds=-10)
@@ -409,3 +408,49 @@ async def test_event_bus_queue_overflow_emits_resync() -> None:
         assert "stream.resync" in types
         resync = next(e for e in received if e["type"] == "stream.resync")
         assert resync["payload"]["reason"] == "queue_overflow"
+
+
+@pytest.mark.asyncio
+async def test_db_pool_startup_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Pre-flight A Verification: Warn at startup if DB pool total is high (> 30)."""
+    import logging
+
+    from app.core.config import settings
+    from app.main import create_app, lifespan
+
+    monkeypatch.setattr(settings, "DB_POOL_SIZE", 25)
+    monkeypatch.setattr(settings, "DB_MAX_OVERFLOW", 15)
+
+    test_app = create_app()
+    with caplog.at_level(logging.WARNING):
+        async with lifespan(test_app):
+            pass
+
+    assert any(
+        "Configured database connection pool total (40) is high" in record.message
+        for record in caplog.records
+    )
+
+
+def test_create_app_default_lifespan_and_security_validator() -> None:
+    """Pre-flight C: create_app defaults to enable_lifespan=True and runs security check."""
+    from app.core.config import Settings, validate_security_configuration
+    from app.main import create_app
+
+    app = create_app()
+    assert app.router.lifespan_context is not None
+
+    # Settings at module load runs validate_security_configuration.
+    # Verify that an insecure config in non-dev fails.
+    insecure = Settings(
+        ENV="production",
+        ADMIN_TOKEN="admin",
+        AUDIT_HMAC_KEY="real-production-key-that-is-long-enough-12345",
+        SESSION_SECRET_KEY="real-production-key-that-is-long-enough-12345",
+    )
+    with pytest.raises(RuntimeError, match="CRITICAL SECURITY ABORT: ADMIN_TOKEN"):
+        validate_security_configuration(insecure)
+

@@ -51,6 +51,7 @@ Write-Host "Postgres & Redis are healthy." -ForegroundColor Green
 
 # 3. Export exact CI environment variables
 $env:DATABASE_URL = "postgresql+asyncpg://prahari:prahari@localhost:5432/prahari"
+$env:BENCH_DATABASE_URL = "postgresql+asyncpg://prahari:prahari@localhost:5432/prahari_bench"
 $env:REDIS_URL = "redis://localhost:6379/0"
 $env:REQUIRE_POSTGRES = "true"
 $env:ADMIN_TOKEN = "ci-admin-token-super-secret-key-32chars"

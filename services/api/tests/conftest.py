@@ -86,6 +86,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             with contextlib.suppress(Exception):
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await conn.run_sync(Base.metadata.create_all)
+            with contextlib.suppress(Exception):
+                truncate_sql = f"TRUNCATE TABLE {', '.join(TABLES_TO_TRUNCATE)} CASCADE;"
+                await conn.execute(text(truncate_sql))
 
         session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         async with session_maker() as session:

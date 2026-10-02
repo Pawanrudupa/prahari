@@ -43,6 +43,7 @@ echo "Postgres & Redis are healthy."
 
 # 3. Export exact CI environment variables
 export DATABASE_URL="postgresql+asyncpg://prahari:prahari@localhost:5432/prahari"
+export BENCH_DATABASE_URL="postgresql+asyncpg://prahari:prahari@localhost:5432/prahari_bench"
 export REDIS_URL="redis://localhost:6379/0"
 export REQUIRE_POSTGRES="true"
 export ADMIN_TOKEN="ci-admin-token-super-secret-key-32chars"

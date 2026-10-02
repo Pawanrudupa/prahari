@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--scenario",
-        choices=["benign", "injection", "pii", "loop", "privilege", "all"],
+        choices=["benign", "injection", "bulk_export", "pii", "loop", "privilege", "all"],
         default="all",
         help="Simulation scenario to execute (default: all)",
     )
@@ -96,14 +96,14 @@ async def main_async() -> int:
         return 0
 
     print("-" * 65)
-    print(f"{'#':<4} {'Agent':<15} {'Tool':<20} {'Decision':<10} {'Rule ID'}")
+    print(f"{'#':<4} {'Agent':<15} {'Tool':<20} {'Decision':<10} {'Rule / Reason'}")
     print("-" * 65)
 
     stats: dict[str, int] = {}
     for idx, r in enumerate(results, 1):
         dec = r.get("decision", "unknown")
         stats[dec] = stats.get(dec, 0) + 1
-        rule = r.get("rule_id") or ""
+        rule = r.get("rule_id") or r.get("reason") or ""
         print(f"{idx:<4} {r['agent']:<15} {r['tool']:<20} {dec:<10} {rule}")
 
     print("=" * 65)

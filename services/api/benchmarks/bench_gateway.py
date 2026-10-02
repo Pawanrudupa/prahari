@@ -11,6 +11,7 @@ from uuid import uuid4
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 
@@ -38,12 +39,85 @@ def _compile_jsonb_sqlite(type_: object, compiler: object, **kw: object) -> str:
     return "JSON"
 
 
+def get_benchmark_db_url() -> str:
+    """Resolve dedicated benchmark database URL, preferring dedicated prahari_bench."""
+    if os.environ.get("BENCH_DATABASE_URL"):
+        return os.environ["BENCH_DATABASE_URL"]
+    if os.environ.get("TEST_DATABASE_URL"):
+        return os.environ["TEST_DATABASE_URL"]
+    base_url = os.environ.get("DATABASE_URL", "")
+    if base_url and "postgres" in base_url:
+        try:
+            url = make_url(base_url)
+            # Default to isolated prahari_bench database
+            if url.database == "prahari":
+                return str(url.set(database="prahari_bench"))
+            return base_url
+        except Exception:
+            return base_url
+    return "sqlite+aiosqlite:///:memory:"
+
+
+def assert_safe_benchmark_database(db_url: str) -> None:
+    """
+    SAFETY INVARIANT:
+    Refuse to truncate tables unless database name contains 'test' or 'bench',
+    or ALLOW_BENCH_TRUNCATE=true is explicitly provided.
+    """
+    if os.environ.get("ALLOW_BENCH_TRUNCATE", "").lower() in ("true", "1", "yes"):
+        return
+
+    try:
+        url = make_url(db_url)
+        db_name = (url.database or "").lower()
+    except Exception:
+        db_name = db_url.split("/")[-1].split("?")[0].lower()
+
+    if "test" in db_name or "bench" in db_name:
+        return
+
+    raise RuntimeError(
+        f"BENCHMARK SAFETY ABORT: Truncate refused on database '{db_name}'. "
+        "Benchmark database name must contain 'test' or 'bench' to prevent accidental "
+        "data loss on primary databases. Set ALLOW_BENCH_TRUNCATE=true to override."
+    )
+
+
+async def _ensure_postgres_db_exists(target_url: str) -> None:
+    """Ensure dedicated benchmark database exists on the target PostgreSQL server."""
+    try:
+        url = make_url(target_url)
+        db_name = url.database
+        if not db_name or not ("test" in db_name or "bench" in db_name):
+            return
+
+        for maint_db in ("postgres", "prahari"):
+            try:
+                maint_url = str(url.set(database=maint_db))
+                maint_engine = create_async_engine(maint_url, isolation_level="AUTOCOMMIT")
+                async with maint_engine.connect() as conn:
+                    res = await conn.execute(
+                        text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                        {"name": db_name},
+                    )
+                    if not res.scalar():
+                        await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+                await maint_engine.dispose()
+                return
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+
 async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
     """Run sequential tool call requests and compute latency percentiles."""
-    db_url = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
+    db_url = get_benchmark_db_url()
     is_postgres = bool(db_url and ("postgres" in db_url))
 
     if is_postgres:
+        assert_safe_benchmark_database(db_url)
+        await _ensure_postgres_db_exists(db_url)
         safe_url = db_url.split("@")[-1] if "@" in db_url else db_url
         print(f"Running benchmark against real PostgreSQL: {safe_url}")
         engine = create_async_engine(db_url, echo=False)
@@ -52,13 +126,12 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await conn.run_sync(Base.metadata.create_all)
             # Isolate benchmark data from any prior test data
-            with contextlib.suppress(Exception):
-                await conn.execute(
-                    text(
-                        "TRUNCATE TABLE agent_tool_grants, agents, tools, "
-                        "audit_log, audit_checkpoints CASCADE"
-                    )
+            await conn.execute(
+                text(
+                    "TRUNCATE TABLE agent_tool_grants, agents, tools, "
+                    "audit_log, audit_checkpoints CASCADE"
                 )
+            )
 
     else:
         print("Running benchmark against in-memory SQLite fallback")
@@ -145,6 +218,7 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
 
     # Clean up benchmark data on teardown
     if is_postgres:
+        assert_safe_benchmark_database(db_url)
         async with engine.begin() as conn:
             with contextlib.suppress(Exception):
                 await conn.execute(

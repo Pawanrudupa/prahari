@@ -59,8 +59,8 @@ async def dev_session_endpoint() -> LoginResponse:
     """
     if settings.ENV.lower() not in ("development", "dev", "test"):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Development session bypass is prohibited in non-development environments",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Development session bypass endpoint is disabled in non-development modes",
         )
 
     token = create_session_token(role="admin", mode="development-bypass")

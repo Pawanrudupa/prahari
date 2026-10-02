@@ -50,7 +50,7 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 
 ## REST endpoints (v1)
 - `POST /v1/auth/login` body `{admin_token}` -> `{session_token, token_type, expires_in, mode}` (exchanges admin secret for browser session token; admin secret is never exposed in browser)
-- `GET /v1/auth/dev-session` -> `{session_token, mode: "development-bypass"}` (development-only bypass, rejected in production with HTTP 403)
+- `GET /v1/auth/dev-session` -> `{session_token, mode: "development-bypass"}` (development-only bypass, rejected in production with HTTP 404)
 - `POST /v1/auth/ws-ticket` (admin or session auth) -> `{ticket, expires_in}` (mints a single-use, 30-second ticket for WebSocket connection; prevents token exposure in URLs and access logs)
 - `POST /v1/gateway/tool-call` body `{agent_key, session_id, tool, args, purpose?, context?{user_prompt, tool_outputs[]}}` -> `{decision, rule_id, reason, redacted_args?, approval_id?, decision_id, data_classes}`
 - `GET/POST /v1/agents` (admin only)
@@ -118,6 +118,13 @@ Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, 
    - Tradeoff: Inherently serializes audit commits, limiting maximum write throughput to ~1,000–3,000 appends/sec per PostgreSQL database instance. Multi-region horizontal scale would require sharded partition chains.
 3. **Production Startup Secret Guard**:
    - Server refuses startup if default placeholder secrets (`ADMIN_TOKEN`, `AUDIT_HMAC_KEY`, `SESSION_SECRET_KEY`) are detected outside `ENV=development`.
+4. **Database Connection Pool Sizing Constraint**:
+   - Sized conservatively (`DB_POOL_SIZE=10`, `DB_MAX_OVERFLOW=5`) to prevent PostgreSQL connection exhaustion.
+   - Operational invariant: `workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) < max_connections` (default 100).
+   - Lifespan logs a startup warning if configured pool total per process exceeds 30.
+5. **Dedicated Benchmark Database & Truncation Guard**:
+   - Latency benchmarks must run on isolated databases (`*test*` or `*bench*`, e.g. `prahari_bench`).
+   - Truncation is unconditionally refused against primary databases unless `ALLOW_BENCH_TRUNCATE=true` is explicitly provided.
 
 ## PII detectors (India-focused)
 Aadhaar (12 digits, Verhoeff checksum), PAN (`[A-Z]{5}[0-9]{4}[A-Z]`), Indian mobile (`(\+91)?[6-9]\d{9}`), email, IFSC, UPI ID. Detectors must return data class labels only, never store raw values in logs.
