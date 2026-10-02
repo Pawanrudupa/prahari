@@ -112,4 +112,68 @@ describe("useGraphStore", () => {
     expect(state.decisions[999]!.audit_seq).toBe(1005);
     expect(state.latestAuditSeq).toBe(1005);
   });
+
+  it("sets and persists pending approval badge count on agent on escalate event until resolved", () => {
+    useGraphStore.getState().applySnapshot({
+      latest_audit_seq: 10,
+      agents: [{ id: "ag-1", name: "Support-Bot", role: "support", owner: "Ops", status: "active" }],
+      tools: [],
+      grants: [],
+      recent_decisions: [],
+    });
+
+    const escalateEvent = makeDecision(12, "dec-esc-1", "ag-1");
+    escalateEvent.outcome = "escalate";
+
+    useGraphStore.getState().applyEvent(escalateEvent);
+
+    const agentAfterEscalate = useGraphStore.getState().agents.get("ag-1");
+    expect(agentAfterEscalate?.pendingEscalations).toBe(1);
+    expect(useGraphStore.getState().pendingEscalations.get("ag-1")).toBe(1);
+
+    // Another event for same agent doesn't clear the pending escalation
+    const allowEvent = makeDecision(15, "dec-allow-2", "ag-1");
+    allowEvent.outcome = "allow";
+    useGraphStore.getState().applyEvent(allowEvent);
+
+    expect(useGraphStore.getState().agents.get("ag-1")?.pendingEscalations).toBe(1);
+
+    // Resolving escalation decrements and clears the badge
+    useGraphStore.getState().resolveEscalation("ag-1");
+    expect(useGraphStore.getState().agents.get("ag-1")?.pendingEscalations).toBe(0);
+    expect(useGraphStore.getState().pendingEscalations.get("ag-1")).toBeUndefined();
+  });
+
+  it("animates only live stream events and does not invoke live animation listener on snapshot hydration", () => {
+    let liveEventCount = 0;
+    useGraphStore.getState().setLiveEventListener(() => {
+      liveEventCount++;
+    });
+
+    // Hydrate snapshot with recent decisions
+    useGraphStore.getState().applySnapshot({
+      latest_audit_seq: 10,
+      agents: [],
+      tools: [],
+      grants: [],
+      recent_decisions: [makeDecision(8), makeDecision(9), makeDecision(10)],
+    });
+
+    // Recent decisions from snapshot MUST NOT trigger animation!
+    expect(liveEventCount).toBe(0);
+
+    // Live stream event triggers animation listener
+    useGraphStore.getState().applyEvent(makeDecision(11));
+    expect(liveEventCount).toBe(1);
+  });
+
+  it("tracks hovered node and WebGL context loss states", () => {
+    expect(useGraphStore.getState().hoveredNodeId).toBeNull();
+    useGraphStore.getState().hoverNode("node-xyz");
+    expect(useGraphStore.getState().hoveredNodeId).toBe("node-xyz");
+
+    expect(useGraphStore.getState().webglLost).toBe(false);
+    useGraphStore.getState().setWebglLost(true);
+    expect(useGraphStore.getState().webglLost).toBe(true);
+  });
 });

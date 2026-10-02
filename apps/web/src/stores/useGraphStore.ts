@@ -17,11 +17,19 @@ interface GraphState {
   latestAuditSeq: number;
   selectedNodeId: string | null;
   selectedDecisionId: string | null;
+  hoveredNodeId: string | null;
+  webglLost: boolean;
+  pendingEscalations: Map<string, number>;
+  liveEventListener: ((event: DecisionEvent) => void) | null;
 
   applySnapshot: (snapshot: GraphSnapshot) => void;
   applyEvent: (event: DecisionEvent) => boolean;
   selectNode: (id: string | null) => void;
   selectDecision: (id: string | null) => void;
+  hoverNode: (id: string | null) => void;
+  setWebglLost: (lost: boolean) => void;
+  resolveEscalation: (agentId: string) => void;
+  setLiveEventListener: (fn: ((event: DecisionEvent) => void) | null) => void;
   clear: () => void;
 }
 
@@ -33,6 +41,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   latestAuditSeq: 0,
   selectedNodeId: null,
   selectedDecisionId: null,
+  hoveredNodeId: null,
+  webglLost: false,
+  pendingEscalations: new Map(),
+  liveEventListener: null,
 
   applySnapshot: (snapshot: GraphSnapshot) => {
     const agentsMap = new Map<string, AgentNode>();
@@ -41,6 +53,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         ...a,
         activityCount: 0,
         riskScore: 0.0,
+        pendingEscalations: get().pendingEscalations.get(a.id) || 0,
       });
     }
 
@@ -58,7 +71,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         existingIds.add(d.decision_id);
         mergedDecisions.push(d);
 
-        // Update agent activity count
+        // Update agent activity count & risk score
         const agent = agentsMap.get(d.agent_id);
         if (agent) {
           agent.activityCount = (agent.activityCount || 0) + 1;
@@ -76,6 +89,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
     const newLatestSeq = Math.max(get().latestAuditSeq, snapshot.latest_audit_seq);
 
+    // Note: snapshot recent decisions do NOT trigger liveEventListener animation!
     set({
       agents: agentsMap,
       tools: toolsMap,
@@ -98,14 +112,22 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       return false;
     }
 
-    // 3. Update agent stats in-place
+    // 3. Update agent stats and pending escalations
     const updatedAgents = new Map(state.agents);
+    const updatedPendingEscalations = new Map(state.pendingEscalations);
+
+    if (event.outcome === "escalate") {
+      const current = updatedPendingEscalations.get(event.agent_id) || 0;
+      updatedPendingEscalations.set(event.agent_id, current + 1);
+    }
+
     const agent = updatedAgents.get(event.agent_id);
     if (agent) {
       updatedAgents.set(event.agent_id, {
         ...agent,
         activityCount: (agent.activityCount || 0) + 1,
         riskScore: Math.max(agent.riskScore || 0, event.risk_score),
+        pendingEscalations: updatedPendingEscalations.get(event.agent_id) || 0,
       });
     }
 
@@ -120,7 +142,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       agents: updatedAgents,
       decisions: boundedDecisions,
       latestAuditSeq: Math.max(state.latestAuditSeq, event.audit_seq),
+      pendingEscalations: updatedPendingEscalations,
     });
+
+    // 5. Notify live event listener for 3D animation (ONLY for live stream events)
+    if (state.liveEventListener) {
+      state.liveEventListener(event);
+    }
 
     return true;
   },
@@ -133,6 +161,42 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     set({ selectedDecisionId: id });
   },
 
+  hoverNode: (id: string | null) => {
+    set({ hoveredNodeId: id });
+  },
+
+  setWebglLost: (lost: boolean) => {
+    set({ webglLost: lost });
+  },
+
+  resolveEscalation: (agentId: string) => {
+    const updatedPending = new Map(get().pendingEscalations);
+    const count = updatedPending.get(agentId) || 0;
+    if (count <= 1) {
+      updatedPending.delete(agentId);
+    } else {
+      updatedPending.set(agentId, count - 1);
+    }
+
+    const updatedAgents = new Map(get().agents);
+    const agent = updatedAgents.get(agentId);
+    if (agent) {
+      updatedAgents.set(agentId, {
+        ...agent,
+        pendingEscalations: updatedPending.get(agentId) || 0,
+      });
+    }
+
+    set({
+      pendingEscalations: updatedPending,
+      agents: updatedAgents,
+    });
+  },
+
+  setLiveEventListener: (fn: ((event: DecisionEvent) => void) | null) => {
+    set({ liveEventListener: fn });
+  },
+
   clear: () => {
     set({
       agents: new Map(),
@@ -142,6 +206,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       latestAuditSeq: 0,
       selectedNodeId: null,
       selectedDecisionId: null,
+      hoveredNodeId: null,
+      webglLost: false,
+      pendingEscalations: new Map(),
+      liveEventListener: null,
     });
   },
 }));

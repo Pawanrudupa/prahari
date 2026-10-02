@@ -10,6 +10,8 @@ export interface AgentNode {
   status: string;
   activityCount?: number;
   riskScore?: number;
+  pendingEscalations?: number;
+  position?: [number, number, number];
 }
 
 export interface ToolNode {
@@ -17,6 +19,7 @@ export interface ToolNode {
   name: string;
   server: string;
   sensitivity: string;
+  position?: [number, number, number];
 }
 
 export interface GrantEdge {
