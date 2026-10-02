@@ -1,24 +1,82 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/space-grotesk";
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #070A12;
-  --color-panel: rgba(16, 22, 38, 0.65);
+  --color-bg-base: #070A12;
+  --color-bg-surface: #0B0F19;
+  --color-bg-elevated: #101726;
+  --color-panel: rgba(16, 22, 38, 0.72);
+  --color-panel-border: rgba(255, 255, 255, 0.08);
+
+  --color-accent: #38BDF8;
+  --color-accent-hover: #0EA5E9;
   --color-allow: #2DD4A7;
   --color-redact: #FBBF24;
   --color-escalate: #A78BFA;
   --color-deny: #F43F5E;
   --color-agent: #60A5FA;
   --color-tool: #94A3B8;
+
   --color-text: #E6EAF2;
   --color-text-muted: #8B95A9;
+  --color-text-dim: #64748B;
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", monospace;
+  --font-display: "Space Grotesk", "Inter Variable", sans-serif;
+}
+
+:root {
+  color-scheme: dark;
 }
 
 body {
+  background-color: var(--color-bg-base);
+  color: var(--color-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Glass panel utility */
+.glass-panel {
+  background: var(--color-panel);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-panel-border);
+}
+
+.glass-panel-elevated {
+  background: rgba(16, 23, 38, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Focus ring standard */
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(7, 10, 18, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
 }

@@ -1,41 +1,67 @@
+import { Link, useLocation } from "react-router-dom";
+import {
+  Orbit,
+  Layers,
+  Scale,
+  UserCheck,
+  AlertTriangle,
+  RotateCcw,
+  Swords,
+  FileText,
+  Settings,
+} from "lucide-react";
+import { Tooltip } from "../ui/Tooltip";
+
 const NAV_ITEMS = [
-  { label: "Constellation", icon: "⬡", path: "/", implemented: true },
-  { label: "Sessions", icon: "◎", path: "/sessions", implemented: false },
-  { label: "Policies", icon: "◈", path: "/policies", implemented: false },
-  { label: "Approvals", icon: "✋", path: "/approvals", implemented: false },
-  { label: "Incidents", icon: "⚠", path: "/incidents", implemented: false },
-  { label: "Replay", icon: "↻", path: "/replay", implemented: false },
-  { label: "Red-team", icon: "⛨", path: "/redteam", implemented: false },
-  { label: "Reports", icon: "📊", path: "/reports", implemented: false },
-  { label: "Settings", icon: "⚙", path: "/settings", implemented: false },
-] as const;
+  { label: "Constellation", icon: Orbit, path: "/app/constellation", implemented: true },
+  { label: "Sessions", icon: Layers, path: "/app/sessions", implemented: false },
+  { label: "Policies", icon: Scale, path: "/app/policies", implemented: false },
+  { label: "Approvals", icon: UserCheck, path: "/app/approvals", implemented: false },
+  { label: "Incidents", icon: AlertTriangle, path: "/app/incidents", implemented: false },
+  { label: "Replay", icon: RotateCcw, path: "/app/replay", implemented: false },
+  { label: "Red-team", icon: Swords, path: "/app/redteam", implemented: false },
+  { label: "Reports", icon: FileText, path: "/app/reports", implemented: false },
+  { label: "Settings", icon: Settings, path: "/app/settings", implemented: false },
+];
 
 export function LeftRail() {
+  const location = useLocation();
+
   return (
-    <nav className="flex w-16 flex-col items-center gap-1.5 border-r border-white/10 bg-[var(--color-panel)] py-4 z-20 select-none">
+    <nav className="flex w-16 flex-col items-center gap-2 border-r border-white/[0.08] bg-slate-950/80 backdrop-blur-xl py-4 z-20 select-none">
       {NAV_ITEMS.map((item) => {
+        const Icon = item.icon;
+        const isActive =
+          location.pathname === item.path ||
+          (item.path === "/app/constellation" && (location.pathname === "/app" || location.pathname === "/app/"));
+
         if (item.implemented) {
           return (
-            <button
-              key={item.path}
-              title={item.label}
-              className="flex h-10 w-10 items-center justify-center rounded-lg text-lg text-[#2DD4A7] bg-white/10 shadow-sm transition-colors cursor-pointer"
-            >
-              {item.icon}
-            </button>
+            <Tooltip key={item.path} content={item.label} side="right">
+              <Link
+                to={item.path}
+                className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
+                  isActive
+                    ? "text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 shadow-[0_0_15px_rgba(56,189,248,0.25)]"
+                    : "text-slate-400 hover:text-slate-100 hover:bg-white/[0.05]"
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+              </Link>
+            </Tooltip>
           );
         }
 
         return (
-          <button
-            key={item.path}
-            disabled
-            aria-disabled="true"
-            title={`${item.label} — Coming soon`}
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-lg text-white/25 cursor-not-allowed opacity-40 hover:opacity-50 transition-opacity"
-          >
-            {item.icon}
-          </button>
+          <Tooltip key={item.path} content={`${item.label} (Roadmap / Planned)`} side="right">
+            <button
+              disabled
+              aria-label={item.label}
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 opacity-30 cursor-not-allowed"
+            >
+              <Icon className="w-5 h-5" />
+            </button>
+          </Tooltip>
         );
       })}
     </nav>

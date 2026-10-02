@@ -28,3 +28,7 @@ pgdata/
 # Scratch workspace
 scratch/
 
+# Playwright
+test-results/
+playwright-report/
+
