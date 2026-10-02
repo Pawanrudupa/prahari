@@ -1,6 +1,11 @@
 export type DecisionOutcome = "allow" | "deny" | "redact" | "escalate";
 
-export type ConnectionStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
+export type ConnectionStatus =
+  | "connected"
+  | "connecting"
+  | "reconnecting"
+  | "disconnected"
+  | "error";
 
 export interface AgentNode {
   id: string;

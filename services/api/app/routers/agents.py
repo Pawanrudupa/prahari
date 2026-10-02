@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +37,12 @@ class AgentCreateResponse(BaseModel):
     created_at: datetime
 
 
+class AgentKeyRotateResponse(BaseModel):
+    id: UUID
+    name: str
+    api_key: str = Field(..., description="Rotated API key shown only once")
+
+
 class AgentResponse(BaseModel):
     id: UUID
     name: str
@@ -56,6 +62,14 @@ async def create_agent(
     req: AgentCreateRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> AgentCreateResponse:
+    # Check if agent name already exists
+    existing = await db.execute(select(Agent).where(Agent.name == req.name))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Agent '{req.name}' is already registered",
+        )
+
     key_info = generate_api_key()
     agent = Agent(
         id=uuid4(),
@@ -103,3 +117,31 @@ async def list_agents(
         )
         for a in agents
     ]
+
+
+@router.post(
+    "/{agent_id}/rotate-key",
+    response_model=AgentKeyRotateResponse,
+    summary="Rotate API key for an agent (Admin only)",
+)
+async def rotate_agent_key(
+    agent_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AgentKeyRotateResponse:
+    agent = await db.get(Agent, agent_id)
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent '{agent_id}' not found",
+        )
+    key_info = generate_api_key()
+    agent.api_key_prefix = key_info.prefix
+    agent.api_key_hash = key_info.hashed
+    await db.commit()
+    await db.refresh(agent)
+
+    return AgentKeyRotateResponse(
+        id=agent.id,
+        name=agent.name,
+        api_key=key_info.full_key,
+    )

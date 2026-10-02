@@ -83,8 +83,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const API_BASE = import.meta.env.VITE_API_URL || "/api";
       const res = await fetch(`${API_BASE}/v1/auth/dev-session`, { method: "HEAD" });
-      // If endpoint returns 404, dev-session is disabled
-      set({ isDevEnv: res.status !== 404 });
+      // If endpoint returns 200, dev-session is enabled; if 404/other, it is disabled
+      set({ isDevEnv: res.status === 200 });
     } catch {
       // In case of network error, leave current isDevEnv setting
     }

@@ -25,6 +25,8 @@ export function useEventStream() {
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [retryCount, setRetryCount] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [dataLoaded, setDataLoaded] = useState<boolean>(false);
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState<boolean>(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -54,6 +56,8 @@ export function useEventStream() {
     isIntentionallyClosedRef.current = false;
     bufferedEventsRef.current = [];
     isHydratedRef.current = false;
+    setDataLoaded(false);
+    setIsLoadingSnapshot(false);
 
     setStatus((prev) => (prev === "reconnecting" ? "reconnecting" : "connecting"));
     setError(null);
@@ -72,7 +76,7 @@ export function useEventStream() {
       }
       const errMsg = err instanceof Error ? err.message : "Failed to obtain WebSocket ticket";
       setError(errMsg);
-      setStatus("disconnected");
+      setStatus("error");
       return;
     }
 
@@ -84,6 +88,7 @@ export function useEventStream() {
         setStatus("connected");
         setRetryCount(0);
         setError(null);
+        setIsLoadingSnapshot(true);
 
         // 2. Fetch snapshot to initialize baseline state
         try {
@@ -99,9 +104,13 @@ export function useEventStream() {
           }
           bufferedEventsRef.current = [];
           isHydratedRef.current = true;
+          setDataLoaded(true);
+          setIsLoadingSnapshot(false);
         } catch (snapErr: unknown) {
           const snapMsg = snapErr instanceof Error ? snapErr.message : "Snapshot fetch failed";
           setError(snapMsg);
+          setIsLoadingSnapshot(false);
+          setStatus("error");
         }
       };
 
@@ -194,6 +203,8 @@ export function useEventStream() {
     status,
     retryCount,
     error,
+    dataLoaded,
+    isLoadingSnapshot,
     reconnect: manualReconnect,
   };
 }

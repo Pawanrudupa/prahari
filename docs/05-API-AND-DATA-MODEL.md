@@ -53,7 +53,8 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `GET /v1/auth/dev-session` -> `{session_token, mode: "development-bypass"}` (development-only bypass, rejected in production with HTTP 404)
 - `POST /v1/auth/ws-ticket` (admin or session auth) -> `{ticket, expires_in}` (mints a single-use, 30-second ticket for WebSocket connection; prevents token exposure in URLs and access logs)
 - `POST /v1/gateway/tool-call` body `{agent_key, session_id, tool, args, purpose?, context?{user_prompt, tool_outputs[]}}` -> `{decision, rule_id, reason, redacted_args?, approval_id?, decision_id, data_classes}`
-- `GET/POST /v1/agents` (admin only)
+- `GET/POST /v1/agents` (admin only; returns HTTP 409 Conflict if name already exists)
+- `POST /v1/agents/{id}/rotate-key` (admin only) -> `{id, name, api_key}` (rotates agent credentials idempotently)
 - `GET /v1/tools` (admin/session), `POST /v1/tools` (admin only)
 - `POST /v1/agents/{id}/grants` (admin only), `GET /v1/agents/{id}/grants` (admin/session)
 - `GET /v1/graph/snapshot` -> `{latest_audit_seq, agents, tools, grants, recent_decisions}` (for 3D constellation initial load & subscribe-then-snapshot deduplication)

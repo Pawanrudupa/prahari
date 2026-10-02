@@ -5,10 +5,20 @@ import type { ConnectionStatus } from "../../types/graph";
 interface TopBarProps {
   status: ConnectionStatus;
   retryCount: number;
+  error?: string | null;
+  dataLoaded?: boolean;
+  isLoadingSnapshot?: boolean;
   onReconnect: () => void;
 }
 
-export function TopBar({ status, retryCount, onReconnect }: TopBarProps) {
+export function TopBar({
+  status,
+  retryCount,
+  error,
+  dataLoaded,
+  isLoadingSnapshot,
+  onReconnect,
+}: TopBarProps) {
   const mode = useAuthStore((s) => s.mode);
   const logout = useAuthStore((s) => s.logout);
 
@@ -27,6 +37,9 @@ export function TopBar({ status, retryCount, onReconnect }: TopBarProps) {
         <ConnectionBanner
           status={status}
           retryCount={retryCount}
+          error={error}
+          dataLoaded={dataLoaded}
+          isLoadingSnapshot={isLoadingSnapshot}
           onReconnect={onReconnect}
         />
         <button

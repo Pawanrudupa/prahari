@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppShell } from "./components/layout/AppShell";
 import { LoginPage } from "./pages/LoginPage";
 import { Constellation } from "./scenes/Constellation";
+import { TestEffectsPanel } from "./components/controls/TestEffectsPanel";
 import { useAuthStore } from "./stores/useAuthStore";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ export function App() {
             <Routes>
               <Route path="/" element={<Constellation />} />
             </Routes>
+            <TestEffectsPanel />
           </AppShell>
         )}
       </BrowserRouter>

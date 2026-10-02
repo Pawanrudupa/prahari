@@ -68,8 +68,29 @@ export function ParticlePool({
   // Subscribe to LIVE stream events ONLY (never snapshot replay)
   useEffect(() => {
     const handleLiveEvent = (event: DecisionEvent) => {
-      const p0 = agentPositions.get(event.agent_id);
-      const p1 = toolPositions.get(event.tool_id);
+      // 1. Resolve agent position: try direct agent_id, then agent name match
+      let p0 = agentPositions.get(event.agent_id);
+      if (!p0) {
+        const agents = useGraphStore.getState().agents;
+        for (const [id, a] of agents.entries()) {
+          if (a.name === event.agent_id || (event.agent_name && a.name === event.agent_name)) {
+            p0 = agentPositions.get(id);
+            break;
+          }
+        }
+      }
+
+      // 2. Resolve tool position: try direct tool_id, then tool name match
+      let p1 = toolPositions.get(event.tool_id);
+      if (!p1) {
+        const tools = useGraphStore.getState().tools;
+        for (const [id, t] of tools.entries()) {
+          if (t.name === event.tool_id) {
+            p1 = toolPositions.get(id);
+            break;
+          }
+        }
+      }
 
       if (!p0 || !p1) return;
 

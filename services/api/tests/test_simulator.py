@@ -1,5 +1,5 @@
-"""Tests verifying simulator determinism, synthetic fake PII, and scenario generators."""
-
+import pytest
+from httpx import AsyncClient
 from services.simulator.clock import SimulationClock
 from services.simulator.fixtures import (
     SYNTHETIC_FAKE_AADHAAR,
@@ -58,3 +58,43 @@ def test_simulator_pii_is_strictly_synthetic_and_fake() -> None:
         # Real-world Aadhaar numbers are 12 digits without all zeros
         assert "0000 0000 0000" in body
         assert SYNTHETIC_FAKE_EMAIL in c["args"]["recipient"]
+
+
+@pytest.mark.asyncio
+async def test_simulator_provisioning_is_idempotent(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """Verify simulator provisioning finds agents/tools by name and never adds duplicates."""
+    from services.simulator.runner import SimulationRunner
+
+    from app.core.config import settings
+
+    runner1 = SimulationRunner(
+        api_url=str(client.base_url).rstrip("/"),
+        admin_token=settings.ADMIN_TOKEN,
+    )
+    await runner1.provision(client)
+
+    # Check agent count
+    resp1 = await client.get("/v1/agents", headers=admin_headers)
+    assert resp1.status_code == 200
+    agents1 = resp1.json()
+    assert len(agents1) == 3
+    assert set(runner1.agent_keys.keys()) == {"Support-Bot", "Finance-Agent", "DevOps-Agent"}
+
+    # Run provisioning second time with a separate simulator runner instance
+    runner2 = SimulationRunner(
+        api_url=str(client.base_url).rstrip("/"),
+        admin_token=settings.ADMIN_TOKEN,
+    )
+    await runner2.provision(client)
+
+    # Check agent count is STILL strictly 3 (no duplicate agents created!)
+    resp2 = await client.get("/v1/agents", headers=admin_headers)
+    assert resp2.status_code == 200
+    agents2 = resp2.json()
+    assert len(agents2) == 3
+
+    # Check that runner2 obtained valid keys for all 3 agents
+    assert set(runner2.agent_keys.keys()) == {"Support-Bot", "Finance-Agent", "DevOps-Agent"}

@@ -47,6 +47,10 @@ async def login_endpoint(req: LoginRequest) -> LoginResponse:
     return LoginResponse(session_token=token, mode="admin")
 
 
+@router.head(
+    "/dev-session",
+    include_in_schema=False,
+)
 @router.get(
     "/dev-session",
     response_model=LoginResponse,

@@ -29,6 +29,7 @@ interface GraphState {
   hoverNode: (id: string | null) => void;
   setWebglLost: (lost: boolean) => void;
   resolveEscalation: (agentId: string) => void;
+  clearEscalations: () => void;
   setLiveEventListener: (fn: ((event: DecisionEvent) => void) | null) => void;
   clear: () => void;
 }
@@ -116,18 +117,30 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const updatedAgents = new Map(state.agents);
     const updatedPendingEscalations = new Map(state.pendingEscalations);
 
-    if (event.outcome === "escalate") {
-      const current = updatedPendingEscalations.get(event.agent_id) || 0;
-      updatedPendingEscalations.set(event.agent_id, current + 1);
+    // Find agent by UUID or name
+    let targetAgentId = event.agent_id;
+    let agent = updatedAgents.get(targetAgentId);
+    if (!agent) {
+      for (const [id, a] of updatedAgents.entries()) {
+        if (a.name === event.agent_id || (event.agent_name && a.name === event.agent_name)) {
+          targetAgentId = id;
+          agent = a;
+          break;
+        }
+      }
     }
 
-    const agent = updatedAgents.get(event.agent_id);
+    if (event.outcome === "escalate") {
+      const current = updatedPendingEscalations.get(targetAgentId) || 0;
+      updatedPendingEscalations.set(targetAgentId, current + 1);
+    }
+
     if (agent) {
-      updatedAgents.set(event.agent_id, {
+      updatedAgents.set(targetAgentId, {
         ...agent,
         activityCount: (agent.activityCount || 0) + 1,
         riskScore: Math.max(agent.riskScore || 0, event.risk_score),
-        pendingEscalations: updatedPendingEscalations.get(event.agent_id) || 0,
+        pendingEscalations: updatedPendingEscalations.get(targetAgentId) || 0,
       });
     }
 
@@ -190,6 +203,18 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     set({
       pendingEscalations: updatedPending,
       agents: updatedAgents,
+    });
+  },
+
+  clearEscalations: () => {
+    const state = get();
+    const updatedAgents = new Map(state.agents);
+    for (const [id, a] of updatedAgents.entries()) {
+      updatedAgents.set(id, { ...a, pendingEscalations: 0 });
+    }
+    set({
+      agents: updatedAgents,
+      pendingEscalations: new Map(),
     });
   },
 

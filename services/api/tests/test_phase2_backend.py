@@ -453,4 +453,3 @@ def test_create_app_default_lifespan_and_security_validator() -> None:
     )
     with pytest.raises(RuntimeError, match="CRITICAL SECURITY ABORT: ADMIN_TOKEN"):
         validate_security_configuration(insecure)
-

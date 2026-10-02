@@ -8,7 +8,8 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
-  const { status, retryCount, reconnect } = useEventStream();
+  const { status, retryCount, error, dataLoaded, isLoadingSnapshot, reconnect } =
+    useEventStream();
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-bg)]">
@@ -17,6 +18,9 @@ export function AppShell({ children }: AppShellProps) {
         <TopBar
           status={status}
           retryCount={retryCount}
+          error={error}
+          dataLoaded={dataLoaded}
+          isLoadingSnapshot={isLoadingSnapshot}
           onReconnect={reconnect}
         />
         <main className="flex-1 overflow-hidden relative">

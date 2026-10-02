@@ -1,4 +1,4 @@
-import { useRef, useEffect, type ComponentRef } from "react";
+import { useRef, useEffect, useMemo, type ComponentRef } from "react";
 import * as THREE from "three";
 import { useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
@@ -10,7 +10,25 @@ interface CameraControllerProps {
   reducedMotion?: boolean;
 }
 
-const DEFAULT_CAMERA_POS = new THREE.Vector3(0, 12, 22);
+function computeOverviewCameraPos(
+  agentPositions: Map<string, [number, number, number]>,
+  toolPositions: Map<string, [number, number, number]>,
+): THREE.Vector3 {
+  let maxR = 16.5;
+  for (const pos of agentPositions.values()) {
+    const r = Math.hypot(pos[0], pos[1], pos[2]);
+    if (r > maxR) maxR = r;
+  }
+  for (const pos of toolPositions.values()) {
+    const r = Math.hypot(pos[0], pos[1], pos[2]);
+    if (r > maxR) maxR = r;
+  }
+
+  // Margin factor so all nodes fit comfortably inside FOV
+  const dist = Math.max(26, maxR * 1.55);
+  return new THREE.Vector3(0, Number((dist * 0.45).toFixed(2)), Number((dist * 0.88).toFixed(2)));
+}
+
 const DEFAULT_TARGET = new THREE.Vector3(0, 0, 0);
 
 export function CameraController({
@@ -24,16 +42,31 @@ export function CameraController({
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const selectNode = useGraphStore((s) => s.selectNode);
 
+  // Compute overview pos based on layout
+  const overviewPos = useMemo(
+    () => computeOverviewCameraPos(agentPositions, toolPositions),
+    [agentPositions, toolPositions],
+  );
+
   // Desired target & camera position refs
   const targetFocus = useRef<THREE.Vector3>(DEFAULT_TARGET.clone());
-  const cameraFocus = useRef<THREE.Vector3>(DEFAULT_CAMERA_POS.clone());
-  const isTransitioning = useRef<boolean>(false);
+  const cameraFocus = useRef<THREE.Vector3>(overviewPos.clone());
+  const isTransitioning = useRef<boolean>(true);
+
+  // Auto-frame initial camera on mount
+  useEffect(() => {
+    if (!selectedNodeId) {
+      targetFocus.current.copy(DEFAULT_TARGET);
+      cameraFocus.current.copy(overviewPos);
+      isTransitioning.current = true;
+    }
+  }, [overviewPos, selectedNodeId]);
 
   // Update desired focus when selectedNodeId changes
   useEffect(() => {
     if (!selectedNodeId) {
       targetFocus.current.copy(DEFAULT_TARGET);
-      cameraFocus.current.copy(DEFAULT_CAMERA_POS);
+      cameraFocus.current.copy(overviewPos);
       isTransitioning.current = true;
       return;
     }
@@ -53,7 +86,7 @@ export function CameraController({
       );
       isTransitioning.current = true;
     }
-  }, [selectedNodeId, agentPositions, toolPositions]);
+  }, [selectedNodeId, agentPositions, toolPositions, overviewPos]);
 
   // Double click canvas background to reset camera
   useEffect(() => {
@@ -102,7 +135,7 @@ export function CameraController({
       makeDefault
       enableDamping
       dampingFactor={0.05}
-      maxDistance={45}
+      maxDistance={85}
       minDistance={4}
       maxPolarAngle={Math.PI / 2 + 0.1} // Prevent looking completely from below ground
     />

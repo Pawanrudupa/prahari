@@ -8,7 +8,12 @@ interface GrantEdgesMeshProps {
 }
 
 const tempObject = new THREE.Object3D();
+const tempColor = new THREE.Color();
 const yAxis = new THREE.Vector3(0, 1, 0);
+
+const highlightColor = new THREE.Color("#38BDF8"); // Vibrant cyan
+const defaultDimColor = new THREE.Color("#334155"); // Subtle dark slate
+const fadedColor = new THREE.Color("#0F172A"); // Faded out when other node is selected
 
 export function GrantEdgesMesh({
   agentPositions,
@@ -16,6 +21,8 @@ export function GrantEdgesMesh({
 }: GrantEdgesMeshProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const grants = useGraphStore((s) => s.grants);
+  const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
+  const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
 
   // Filter valid grants that have known positions
   const validGrants = useMemo(() => {
@@ -26,13 +33,14 @@ export function GrantEdgesMesh({
 
   const count = validGrants.length;
 
-  const cylGeo = useMemo(() => new THREE.CylinderGeometry(0.012, 0.012, 1, 6), []);
+  // Thin, delicate geometry for uncluttered constellation aesthetic
+  const cylGeo = useMemo(() => new THREE.CylinderGeometry(0.006, 0.006, 1, 5), []);
   const edgeMat = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: "#38BDF8",
+        color: "#FFFFFF",
         transparent: true,
-        opacity: 0.2,
+        opacity: 0.65,
       }),
     [],
   );
@@ -45,12 +53,14 @@ export function GrantEdgesMesh({
   }, [cylGeo, edgeMat]);
 
   useEffect(() => {
-    if (!meshRef.current) return;
+    if (!meshRef.current || count === 0) return;
 
     const pStart = new THREE.Vector3();
     const pEnd = new THREE.Vector3();
     const dir = new THREE.Vector3();
     const quat = new THREE.Quaternion();
+
+    const hasFocus = Boolean(selectedNodeId || hoveredNodeId);
 
     for (let i = 0; i < count; i++) {
       const g = validGrants[i]!;
@@ -66,16 +76,36 @@ export function GrantEdgesMesh({
       dir.subVectors(pEnd, pStart).normalize();
       quat.setFromUnitVectors(yAxis, dir);
 
+      const isHighlighted =
+        (selectedNodeId && (g.agent_id === selectedNodeId || g.tool_id === selectedNodeId)) ||
+        (hoveredNodeId && (g.agent_id === hoveredNodeId || g.tool_id === hoveredNodeId));
+
+      let thicknessScale = 1.0;
+      if (isHighlighted) {
+        thicknessScale = 3.2;
+        tempColor.copy(highlightColor);
+      } else if (hasFocus) {
+        thicknessScale = 0.6;
+        tempColor.copy(fadedColor);
+      } else {
+        thicknessScale = 1.0;
+        tempColor.copy(defaultDimColor);
+      }
+
       tempObject.position.copy(mid);
       tempObject.quaternion.copy(quat);
-      tempObject.scale.set(1, length, 1);
+      tempObject.scale.set(thicknessScale, length, thicknessScale);
       tempObject.updateMatrix();
 
       meshRef.current.setMatrixAt(i, tempObject.matrix);
+      meshRef.current.setColorAt(i, tempColor);
     }
 
     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [validGrants, agentPositions, toolPositions, count]);
+    if (meshRef.current.instanceColor) {
+      meshRef.current.instanceColor.needsUpdate = true;
+    }
+  }, [validGrants, agentPositions, toolPositions, count, selectedNodeId, hoveredNodeId]);
 
   if (count === 0) return null;
 
