@@ -37,6 +37,23 @@ class SimulationRunner:
         self.clock.reset()
         self.decisions_log.clear()
 
+    async def reset_limits(self) -> None:
+        """Reset in-memory and Redis limit counters between simulation runs."""
+        import os
+        with contextlib.suppress(Exception):
+            from app.limits.service import in_memory_tracker
+            in_memory_tracker.reset()
+
+        redis_url = os.environ.get("REDIS_URL")
+        if redis_url:
+            with contextlib.suppress(Exception):
+                import redis.asyncio as aioredis
+                r = aioredis.from_url(redis_url)
+                keys = await r.keys("prahari:limit:*")
+                if keys:
+                    await r.delete(*keys)
+                await r.aclose()
+
     async def provision(self, client: httpx.AsyncClient) -> None:
         """Provision canonical agents and tools via the Admin API."""
         admin_headers = {"Authorization": f"Bearer {self.admin_token}"}
@@ -191,6 +208,7 @@ class SimulationRunner:
         stress: bool,
     ) -> None:
         await self.provision(client)
+        await self.reset_limits()
 
         if stress:
             await self.provision_stress_nodes(client, target_nodes=200)

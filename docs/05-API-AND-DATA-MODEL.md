@@ -111,7 +111,7 @@ Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, 
 1. **Checkpoint Truncation Detection Window**:
    - Checkpoints store `(seq, head_hash, signature)` using HMAC-SHA256 (`AUDIT_HMAC_KEY`).
    - Auto-checkpointed every `AUDIT_CHECKPOINT_INTERVAL` appends (default 50).
-   - Deleting records appended after the most recent checkpoint ($k \times N$) up to $(k \times N) + m$ can theoretically occur before the next checkpoint is persisted. `AUDIT_CHECKPOINT_INTERVAL` bounds this exposure; `/v1/audit/verify` flags if uncheckpointed rows exceed the interval or if checkpoint sequence monotonicity is broken.
+    - Deleting records appended after the most recent checkpoint `(k * N)` up to `(k * N) + m` can theoretically occur before the next checkpoint is persisted. `AUDIT_CHECKPOINT_INTERVAL` bounds this exposure; `/v1/audit/verify` flags if uncheckpointed rows exceed the interval or if checkpoint sequence monotonicity is broken.
 2. **Single-Chain Advisory Lock Sequencer**:
    - Audit log append sequencing uses a PostgreSQL transactional advisory lock (`pg_advisory_xact_lock(740101)`).
    - Guarantees strict monotonic linear sequence numbers with zero forks under concurrent load.
@@ -120,7 +120,7 @@ Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, 
    - Server refuses startup if default placeholder secrets (`ADMIN_TOKEN`, `AUDIT_HMAC_KEY`, `SESSION_SECRET_KEY`) are detected outside `ENV=development`.
 4. **Database Connection Pool Sizing Constraint**:
    - Sized conservatively (`DB_POOL_SIZE=10`, `DB_MAX_OVERFLOW=5`) to prevent PostgreSQL connection exhaustion.
-   - Operational invariant: `workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) < max_connections` (default 100).
+   - Operational invariant: `workers * (DB_POOL_SIZE + DB_MAX_OVERFLOW) < max_connections` (default 100).
    - Lifespan logs a startup warning if configured pool total per process exceeds 30.
 5. **Dedicated Benchmark Database & Truncation Guard**:
    - Latency benchmarks must run on isolated databases (`*test*` or `*bench*`, e.g. `prahari_bench`).

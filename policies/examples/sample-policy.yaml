@@ -33,6 +33,18 @@ rules:
     when:
       injection_score_gte: 0.8
 
+  - id: R5-allow-finance-payments
+    effect: allow
+    agent:
+      role: finance
+    tool: payments.transfer
+
+  - id: R6-allow-devops-infra
+    effect: allow
+    agent:
+      role: devops
+    tool: infra.restart_service
+
 limits:
   - id: L1
     per: agent

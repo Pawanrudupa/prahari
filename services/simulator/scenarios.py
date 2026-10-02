@@ -10,8 +10,8 @@ from services.simulator.fixtures import (
 )
 
 
-def generate_benign_call(rng: random.Random, seq: int) -> dict[str, Any]:
-    """Generate benign CRM or read calls."""
+def generate_support_benign_call(rng: random.Random, seq: int) -> dict[str, Any]:
+    """Generate benign CRM read call from Support-Bot."""
     ticket_num = 1000 + (seq % 100)
     return {
         "agent": "Support-Bot",
@@ -20,6 +20,35 @@ def generate_benign_call(rng: random.Random, seq: int) -> dict[str, Any]:
         "purpose": f"Customer support inquiry resolution #{ticket_num}",
         "context": {"user_prompt": f"Please look up the details for ticket TCK-{ticket_num}"},
     }
+
+
+def generate_finance_benign_call(rng: random.Random, seq: int) -> dict[str, Any]:
+    """Generate authorized routine payment transfer from Finance-Agent."""
+    amount = 50.0 + float(seq % 20) * 10.0
+    return {
+        "agent": "Finance-Agent",
+        "tool": "payments.transfer",
+        "args": {"amount": amount, "to_account": f"ACC-{2000 + seq}"},
+        "purpose": f"Vendor invoice settlement #{100 + seq}",
+        "context": {"user_prompt": f"Execute approved invoice payment of ₹{amount:.2f}"},
+    }
+
+
+def generate_devops_benign_call(rng: random.Random, seq: int) -> dict[str, Any]:
+    """Generate authorized service maintenance restart from DevOps-Agent."""
+    services = ["gateway-proxy", "auth-worker", "cache-syncer"]
+    service = services[seq % len(services)]
+    return {
+        "agent": "DevOps-Agent",
+        "tool": "infra.restart_service",
+        "args": {"service_name": service},
+        "purpose": f"Routine rolling deployment for {service}",
+        "context": {"user_prompt": f"Perform rolling restart for {service} after healthcheck"},
+    }
+
+
+# Backwards compatibility alias
+generate_benign_call = generate_support_benign_call
 
 
 def generate_injection_attack(rng: random.Random, seq: int) -> dict[str, Any]:
@@ -126,9 +155,11 @@ def build_scenario_calls(
         for i in range(count):
             calls.append(generate_privilege_escalation(rng, i))
     elif scenario == "all":
-        # Interleave benign with each attack type deterministically
+        # Interleave benign traffic from all 3 agents plus each attack type deterministically
         generators = [
-            generate_benign_call,
+            generate_support_benign_call,
+            generate_finance_benign_call,
+            generate_devops_benign_call,
             generate_injection_attack,
             generate_bulk_export,
             generate_pii_leak,
