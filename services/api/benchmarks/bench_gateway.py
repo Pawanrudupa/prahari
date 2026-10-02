@@ -91,9 +91,9 @@ async def _ensure_postgres_db_exists(target_url: str) -> None:
         if not db_name or not ("test" in db_name or "bench" in db_name):
             return
 
-        for maint_db in ("postgres", "prahari"):
+        for maint_db in ("prahari", "postgres"):
             try:
-                maint_url = str(url.set(database=maint_db))
+                maint_url = url.set(database=maint_db).render_as_string(hide_password=False)
                 maint_engine = create_async_engine(maint_url, isolation_level="AUTOCOMMIT")
                 async with maint_engine.connect() as conn:
                     res = await conn.execute(
