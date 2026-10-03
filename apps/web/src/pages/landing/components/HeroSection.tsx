@@ -13,7 +13,7 @@ export function HeroSection() {
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 mb-8 backdrop-blur-md">
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
           <span className="text-xs font-mono font-medium text-cyan-300">
-            Open-Source Architecture • Pre-Alpha Preview
+            Open-Source (MIT) Preview
           </span>
         </div>
 
@@ -24,7 +24,7 @@ export function HeroSection() {
 
         {/* Subhead Value Prop */}
         <p className="mt-6 text-base sm:text-lg lg:text-xl text-slate-300 max-w-2xl font-sans leading-relaxed">
-          Deterministic, fail-closed governance proxy that intercepts and validates agent tool calls before execution. Protecting enterprise systems from prompt injection, data exfiltration, and runaway loops.
+          Deterministic, fail-closed governance proxy that intercepts and validates agent tool calls before execution. Protecting critical systems from prompt injection, data exfiltration, and runaway loops.
         </p>
 
         {/* Action CTAs */}

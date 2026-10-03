@@ -41,6 +41,7 @@ export function CameraController({
 
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const selectNode = useGraphStore((s) => s.selectNode);
+  const cameraPreset = useGraphStore((s) => s.cameraPreset);
 
   // Compute overview pos based on layout
   const overviewPos = useMemo(
@@ -53,17 +54,34 @@ export function CameraController({
   const cameraFocus = useRef<THREE.Vector3>(overviewPos.clone());
   const isTransitioning = useRef<boolean>(true);
 
-  // Auto-frame initial camera on mount
+  // Handle camera presets & node selection
   useEffect(() => {
-    if (!selectedNodeId) {
+    if (cameraPreset === "top_down") {
       targetFocus.current.copy(DEFAULT_TARGET);
-      cameraFocus.current.copy(overviewPos);
+      const dist = Math.max(30, overviewPos.length());
+      cameraFocus.current.set(0, dist, 0.001);
       isTransitioning.current = true;
+      return;
     }
-  }, [overviewPos, selectedNodeId]);
 
-  // Update desired focus when selectedNodeId changes
-  useEffect(() => {
+    if (cameraPreset === "follow_agent") {
+      let targetPos: [number, number, number] | undefined;
+      if (selectedNodeId) {
+        targetPos = agentPositions.get(selectedNodeId);
+      }
+      if (!targetPos && agentPositions.size > 0) {
+        targetPos = Array.from(agentPositions.values())[0];
+      }
+
+      if (targetPos) {
+        targetFocus.current.set(targetPos[0], targetPos[1], targetPos[2]);
+        cameraFocus.current.set(targetPos[0] + 3.5, targetPos[1] + 2.0, targetPos[2] + 4.0);
+        isTransitioning.current = true;
+        return;
+      }
+    }
+
+    // Default overview or node focus
     if (!selectedNodeId) {
       targetFocus.current.copy(DEFAULT_TARGET);
       cameraFocus.current.copy(overviewPos);
@@ -76,7 +94,6 @@ export function CameraController({
 
     if (pos) {
       targetFocus.current.set(pos[0], pos[1], pos[2]);
-      // Position camera slightly elevated and pushed back from the node
       const dir = new THREE.Vector3(pos[0], pos[1], pos[2]).normalize();
       if (dir.lengthSq() < 0.001) dir.set(0, 0, 1);
       cameraFocus.current.set(
@@ -86,9 +103,9 @@ export function CameraController({
       );
       isTransitioning.current = true;
     }
-  }, [selectedNodeId, agentPositions, toolPositions, overviewPos]);
+  }, [cameraPreset, selectedNodeId, agentPositions, toolPositions, overviewPos]);
 
-  // Double click canvas background to reset camera
+  // Double click canvas background to reset camera to overview
   useEffect(() => {
     const handleDblClick = () => {
       selectNode(null);
@@ -107,12 +124,10 @@ export function CameraController({
 
     if (isTransitioning.current) {
       if (reducedMotion) {
-        // Instant teleport for reduced motion
         controlsRef.current.target.copy(targetFocus.current);
         camera.position.copy(cameraFocus.current);
         isTransitioning.current = false;
       } else {
-        // Smooth lerp
         controlsRef.current.target.lerp(targetFocus.current, 0.08);
         camera.position.lerp(cameraFocus.current, 0.08);
 
@@ -137,7 +152,7 @@ export function CameraController({
       dampingFactor={0.05}
       maxDistance={85}
       minDistance={4}
-      maxPolarAngle={Math.PI / 2 + 0.1} // Prevent looking completely from below ground
+      maxPolarAngle={Math.PI / 2 + 0.1}
     />
   );
 }

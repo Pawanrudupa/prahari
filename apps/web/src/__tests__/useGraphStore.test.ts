@@ -176,4 +176,33 @@ describe("useGraphStore", () => {
     useGraphStore.getState().setWebglLost(true);
     expect(useGraphStore.getState().webglLost).toBe(true);
   });
+
+  it("resets agent riskScore and pendingEscalations when clearEscalations is called", () => {
+    useGraphStore.getState().applySnapshot({
+      latest_audit_seq: 10,
+      agents: [{ id: "ag-1", name: "Support-Bot", role: "support", owner: "Ops", status: "active" }],
+      tools: [],
+      grants: [],
+      recent_decisions: [],
+    });
+
+    const escalateEvent: DecisionEvent = {
+      ...makeDecision(11, "dec-11", "ag-1"),
+      outcome: "escalate",
+      risk_score: 0.85,
+    };
+    useGraphStore.getState().applyEvent(escalateEvent);
+
+    const agentWithRisk = useGraphStore.getState().agents.get("ag-1");
+    expect(agentWithRisk?.pendingEscalations).toBe(1);
+    expect(agentWithRisk?.riskScore).toBe(0.85);
+
+    // Call clearEscalations (Reset Badges)
+    useGraphStore.getState().clearEscalations();
+
+    const resetAgent = useGraphStore.getState().agents.get("ag-1");
+    expect(resetAgent?.pendingEscalations).toBe(0);
+    expect(resetAgent?.riskScore).toBe(0.0);
+    expect(useGraphStore.getState().pendingEscalations.size).toBe(0);
+  });
 });

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Shield, ArrowRight } from "lucide-react";
 import { Button } from "../../../components/ui";
@@ -14,7 +15,42 @@ function GithubIcon({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
+const NAV_ITEMS = [
+  { href: "#problem", label: "The Problem" },
+  { href: "#pipeline", label: "3D Pipeline" },
+  { href: "#decision-rules", label: "Deterministic Rules" },
+  { href: "#features", label: "Capabilities" },
+  { href: "#architecture", label: "Architecture" },
+];
+
 export function LandingNavbar() {
+  const [activeHash, setActiveHash] = useState<string>("");
+
+  useEffect(() => {
+    const sectionIds = ["problem", "pipeline", "decision-rules", "features", "architecture"];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const hash = `#${entry.target.id}`;
+            setActiveHash(hash);
+            if (window.history.replaceState) {
+              window.history.replaceState(null, "", hash);
+            }
+          }
+        });
+      },
+      { rootMargin: "-20% 0px -60% 0px", threshold: 0.1 }
+    );
+
+    sectionIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-white/[0.08] bg-slate-950/80 backdrop-blur-xl transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -36,21 +72,25 @@ export function LandingNavbar() {
 
         {/* Nav Links */}
         <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-300">
-          <a href="#problem" className="hover:text-cyan-400 transition-colors">
-            The Problem
-          </a>
-          <a href="#pipeline" className="hover:text-cyan-400 transition-colors">
-            3D Pipeline
-          </a>
-          <a href="#decision-rules" className="hover:text-cyan-400 transition-colors">
-            Deterministic Rules
-          </a>
-          <a href="#features" className="hover:text-cyan-400 transition-colors">
-            Capabilities
-          </a>
-          <a href="#architecture" className="hover:text-cyan-400 transition-colors">
-            Architecture
-          </a>
+          {NAV_ITEMS.map((item) => {
+            const isActive = activeHash === item.href;
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                className={`transition-colors py-1 relative ${
+                  isActive
+                    ? "text-cyan-400 font-semibold"
+                    : "text-slate-300 hover:text-cyan-400"
+                }`}
+              >
+                {item.label}
+                {isActive && (
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-cyan-400 rounded-full" />
+                )}
+              </a>
+            );
+          })}
         </nav>
 
         {/* Action CTAs */}

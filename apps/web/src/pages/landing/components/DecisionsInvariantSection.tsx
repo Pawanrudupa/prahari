@@ -59,7 +59,7 @@ export function DecisionsInvariantSection() {
   ];
 
   return (
-    <section id="decision-rules" className="py-24 border-b border-white/[0.06] bg-slate-950/40 relative">
+    <section id="decision-rules" className="py-24 border-b border-white/[0.06] bg-slate-950/40 relative scroll-mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 mb-4 text-xs font-mono font-medium text-emerald-400">

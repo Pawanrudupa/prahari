@@ -1,39 +1,41 @@
-import { ExternalLink, AlertTriangle, Terminal, ShieldAlert, DollarSign, Database } from "lucide-react";
+import { ExternalLink, AlertTriangle, Terminal, ShieldAlert, Cpu, RefreshCw } from "lucide-react";
 
+// Verified against OWASP Top 10 for Agentic Applications (2026 edition):
+// https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
 export function ProblemSection() {
   const risks = [
     {
       code: "ASI01",
-      title: "Prompt Injection & Tool Hijacking",
+      title: "Agent Goal Hijack",
       description:
-        "Untrusted user instructions or retrieved web context manipulate LLM reasoning, prompting the agent to invoke dangerous functions with attacker-controlled arguments.",
+        "Untrusted user instructions or poisoned web context manipulate LLM reasoning, hijacking the agent's core objectives to execute unauthorized actions.",
       icon: <Terminal className="w-5 h-5 text-rose-400" />,
     },
     {
-      code: "ASI03",
-      title: "Over-Privileged Tool Access",
+      code: "ASI02",
+      title: "Tool Misuse and Exploitation",
       description:
-        "Agents granted broad MCP tool tokens can read customer PII or invoke infrastructure restart commands outside their operational role without explicit permission gates.",
-      icon: <ShieldAlert className="w-5 h-5 text-amber-400" />,
+        "Autonomous agents invoke external tools and APIs with attacker-crafted or malformed parameters, causing unintended side effects and data exposure.",
+      icon: <Cpu className="w-5 h-5 text-amber-400" />,
     },
     {
-      code: "ASI05",
-      title: "Runaway Recursive Loops",
+      code: "ASI03",
+      title: "Identity and Privilege Abuse",
       description:
-        "Flawed reasoning chains or hallucinated arguments create infinite retry loops, exhausting upstream rate limits, triggering third-party spend, and causing service degradation.",
-      icon: <DollarSign className="w-5 h-5 text-purple-400" />,
+        "Agents operating with overly broad capabilities access customer data or trigger high-privilege infrastructure tools outside their designated operational role.",
+      icon: <ShieldAlert className="w-5 h-5 text-purple-400" />,
     },
     {
       code: "ASI08",
-      title: "Zero Cryptographic Auditability",
+      title: "Cascading Failures",
       description:
-        "Standard API gateway logs record isolated HTTP requests, losing the causal chain of agent steps, goal sessions, and evidence needed for regulatory compliance.",
-      icon: <Database className="w-5 h-5 text-sky-400" />,
+        "Unchecked recursive loops and unhandled step failures propagate across interconnected agents, exhausting rate limits and degrading downstream services.",
+      icon: <RefreshCw className="w-5 h-5 text-sky-400" />,
     },
   ];
 
   return (
-    <section id="problem" className="py-24 border-b border-white/[0.06] bg-slate-950/60 relative">
+    <section id="problem" className="py-24 border-b border-white/[0.06] bg-slate-950/60 relative scroll-mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-rose-500/30 bg-rose-500/10 mb-4 text-xs font-mono font-medium text-rose-300">
@@ -52,12 +54,12 @@ export function ProblemSection() {
           <div className="mt-5 flex items-center gap-2">
             <span className="text-xs text-slate-400">Grounded in the</span>
             <a
-              href="https://genai.owasp.org/llm-top-10/"
+              href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-xs font-mono text-cyan-400 hover:text-cyan-300 underline underline-offset-4"
             >
-              OWASP Top 10 for Agentic Applications
+              OWASP Top 10 for Agentic Applications (2026)
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>

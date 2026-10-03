@@ -69,6 +69,7 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `GET /v1/audit/verify` (admin only), `POST /v1/audit/checkpoint` (admin only)
 - `GET /v1/reports/dpdp?from=&to=`
 - `POST /v1/incidents/{id}/circuit-break`
+- `POST /v1/dev/simulate` body `{scenario: string, count: int, seed: int, stress?: bool}` -> `{scenario, count, seed, summary: {allow, redact, escalate, deny}, decisions}` (development and test environments only; returns HTTP 404 in production; concurrency guarded via lock returning HTTP 409 Conflict if already running)
 
 ## WebSocket `/ws/events`
 Authentication: Requires single-use ticket query param `?ticket=<ws_ticket>` (obtained from `POST /v1/auth/ws-ticket`, TTL 30s). `?token=` query parameters are strictly forbidden and rejected to prevent credentials from being logged in reverse proxy access logs, URLs, or browser history.

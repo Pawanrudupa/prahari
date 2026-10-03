@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.database import engine
 from app.core.redis import redis_client
 from app.gateway.router import router as gateway_router
-from app.routers import agents, audit, auth, graph, health, tools
+from app.routers import agents, audit, auth, dev, graph, health, tools
 from app.ws.router import router as ws_router
 
 logger = logging.getLogger(__name__)
@@ -68,5 +68,6 @@ def create_app(enable_lifespan: bool = True) -> FastAPI:
     app.include_router(tools.router)
     app.include_router(graph.router)
     app.include_router(ws_router)
+    app.include_router(dev.router)
 
     return app

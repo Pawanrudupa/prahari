@@ -109,3 +109,48 @@ export const PIPELINE_GATES: PipelineGate[] = [
     positionX: 14,
   },
 ];
+
+export interface OutcomeBranch {
+  id: "allow" | "redact" | "escalate" | "deny";
+  name: string;
+  badgeLabel: string;
+  color: string;
+  position: [number, number, number];
+  description: string;
+}
+
+export const OUTCOME_BRANCHES: OutcomeBranch[] = [
+  {
+    id: "allow",
+    name: "Tool Execution Pod",
+    badgeLabel: "ALLOW",
+    color: "#10B981",
+    position: [19, 2.2, 0],
+    description: "Action executed transparently downstream. Serial record committed to audit chain.",
+  },
+  {
+    id: "redact",
+    name: "Filtered Pass-Through Pod",
+    badgeLabel: "REDACT",
+    color: "#F59E0B",
+    position: [19, 0.7, 0],
+    description: "Personal identifiers sanitized & replaced with typed data class tags before execution.",
+  },
+  {
+    id: "escalate",
+    name: "Human Approval Pod",
+    badgeLabel: "ESCALATE",
+    color: "#A855F7",
+    position: [19, -0.7, 0],
+    description: "Held at Human Approval Pod awaiting manual operator authorize/reject decision.",
+  },
+  {
+    id: "deny",
+    name: "Policy Shield Shatter",
+    badgeLabel: "DENY",
+    color: "#F43F5E",
+    position: [19, -2.2, 0],
+    description: "Immediate rejection. Packet shatters; failure logged in hash-chained audit trail.",
+  },
+];
+

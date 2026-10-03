@@ -35,19 +35,19 @@ export function ParticlePool({
   // Max 64 active burst shards for deny explosions
   const maxBurstShards = 64;
 
-  // Geometries and materials
-  const particleGeo = useMemo(() => new THREE.IcosahedronGeometry(0.09, 1), []);
+  // Punchy particle geometry: 0.22 size so it is clearly visible at 1x default camera zoom
+  const particleGeo = useMemo(() => new THREE.SphereGeometry(0.22, 16, 16), []);
   const particleMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        roughness: 0.15,
-        metalness: 0.8,
-        emissiveIntensity: 0.8,
+        roughness: 0.1,
+        metalness: 0.4,
+        emissiveIntensity: 2.2,
       }),
     [],
   );
 
-  const burstGeo = useMemo(() => new THREE.TetrahedronGeometry(0.06, 0), []);
+  const burstGeo = useMemo(() => new THREE.TetrahedronGeometry(0.18, 0), []);
   const burstMat = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
@@ -95,7 +95,6 @@ export function ParticlePool({
       if (!p0 || !p1) return;
 
       if (reducedMotion) {
-        // Reduced motion: spawn with ultra-short duration
         poolManager.spawn(p0, p1, event.outcome, Date.now(), 50);
       } else {
         poolManager.spawn(p0, p1, event.outcome, Date.now(), 1200);
@@ -109,9 +108,9 @@ export function ParticlePool({
     };
   }, [agentPositions, toolPositions, poolManager, reducedMotion]);
 
-  // Update loop: ZERO React state per frame, strictly refs
+  // Update loop: strictly refs, zero React state per frame
   useFrame((_, delta) => {
-    const deltaMs = Math.min(delta * 1000, 100); // clamp delta
+    const deltaMs = Math.min(delta * 1000, 100);
     poolManager.update(deltaMs);
 
     if (!meshRef.current) return;
@@ -131,7 +130,9 @@ export function ParticlePool({
 
         // Rotation according to outcome
         if (slot.outcome === "redact") {
-          tempObject.rotation.set(0.78, 0.78, 0); // diamond rotation
+          tempObject.rotation.set(0.78, 0.78, 0); // diamond glyph rotation
+        } else if (slot.outcome === "escalate" && slot.phase === "holding") {
+          tempObject.rotation.set(0, (slot.elapsedMs / 200) % (Math.PI * 2), 0);
         } else {
           tempObject.rotation.set(0, 0, 0);
         }
@@ -142,7 +143,7 @@ export function ParticlePool({
         // Color based on outcome and phase
         const visual = OUTCOME_VISUAL_MAP[slot.outcome];
         if (slot.outcome === "redact" && slot.phase === "holding") {
-          tempColor.setHex(0xFFD700); // high-intensity amber gold pulse
+          tempColor.setHex(0xFFD700); // high-intensity gold amber pulse
         } else {
           tempColor.set(visual.colorHex);
         }
@@ -164,15 +165,15 @@ export function ParticlePool({
             s++
           ) {
             const vel = slot.burstVelocities[s]!;
-            const dist = burstProgress * 1.2;
+            const dist = burstProgress * 1.8;
             tempObject.position.set(
               slot.currentPos[0] + vel[0] * dist,
               slot.currentPos[1] + vel[1] * dist,
               slot.currentPos[2] + vel[2] * dist,
             );
-            const shardScale = Math.max(0, 1 - burstProgress);
+            const shardScale = Math.max(0, (1 - burstProgress) * 1.2);
             tempObject.scale.set(shardScale, shardScale, shardScale);
-            tempObject.rotation.set(dist * 5, dist * 5, 0);
+            tempObject.rotation.set(dist * 6, dist * 6, 0);
             tempObject.updateMatrix();
             burstMeshRef.current.setMatrixAt(burstShardIndex++, tempObject.matrix);
           }

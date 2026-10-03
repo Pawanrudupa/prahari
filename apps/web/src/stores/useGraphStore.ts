@@ -21,6 +21,7 @@ interface GraphState {
   webglLost: boolean;
   pendingEscalations: Map<string, number>;
   liveEventListener: ((event: DecisionEvent) => void) | null;
+  cameraPreset: "overview" | "follow_agent" | "top_down";
 
   applySnapshot: (snapshot: GraphSnapshot) => void;
   applyEvent: (event: DecisionEvent) => boolean;
@@ -28,6 +29,7 @@ interface GraphState {
   selectDecision: (id: string | null) => void;
   hoverNode: (id: string | null) => void;
   setWebglLost: (lost: boolean) => void;
+  setCameraPreset: (preset: "overview" | "follow_agent" | "top_down") => void;
   resolveEscalation: (agentId: string) => void;
   clearEscalations: () => void;
   setLiveEventListener: (fn: ((event: DecisionEvent) => void) | null) => void;
@@ -46,6 +48,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   webglLost: false,
   pendingEscalations: new Map(),
   liveEventListener: null,
+  cameraPreset: "overview",
 
   applySnapshot: (snapshot: GraphSnapshot) => {
     const agentsMap = new Map<string, AgentNode>();
@@ -63,17 +66,44 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       toolsMap.set(t.id, t);
     }
 
-    // Merge recent decisions, deduplicating by decision_id
+    // Merge recent decisions, deduplicating by normalized decision_id
     const existingIds = new Set(get().decisions.map((d) => d.decision_id));
     const mergedDecisions = [...get().decisions];
 
-    for (const d of snapshot.recent_decisions) {
-      if (!existingIds.has(d.decision_id)) {
-        existingIds.add(d.decision_id);
+    for (const raw of snapshot.recent_decisions) {
+      const decId =
+        raw.decision_id ||
+        raw.action_id ||
+        `snapshot-seq-${raw.audit_seq}`;
+      const toolId = raw.tool_id || (raw as unknown as { tool?: string }).tool || "unknown";
+      const agent = agentsMap.get(raw.agent_id);
+      const agentName = raw.agent_name || agent?.name || raw.agent_id;
+      const riskScore =
+        raw.risk_score ??
+        (raw.outcome === "escalate" ? 0.85 : raw.outcome === "deny" ? 0.95 : 0.0);
+
+      const d: DecisionEvent = {
+        decision_id: decId,
+        action_id: raw.action_id || decId,
+        agent_id: raw.agent_id,
+        agent_name: agentName,
+        tool_id: toolId,
+        outcome: raw.outcome,
+        rule_id: raw.rule_id ?? null,
+        risk_score: riskScore,
+        session_id: raw.session_id ?? null,
+        parent_action_id: raw.parent_action_id ?? null,
+        audit_seq: raw.audit_seq,
+        data_classes: raw.data_classes ?? [],
+        latency_ms: raw.latency_ms ?? 0,
+        timestamp: raw.timestamp,
+      };
+
+      if (!existingIds.has(decId)) {
+        existingIds.add(decId);
         mergedDecisions.push(d);
 
         // Update agent activity count & risk score
-        const agent = agentsMap.get(d.agent_id);
         if (agent) {
           agent.activityCount = (agent.activityCount || 0) + 1;
           agent.riskScore = Math.max(agent.riskScore || 0, d.risk_score);
@@ -182,6 +212,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     set({ webglLost: lost });
   },
 
+  setCameraPreset: (preset: "overview" | "follow_agent" | "top_down") => {
+    set({ cameraPreset: preset });
+  },
+
   resolveEscalation: (agentId: string) => {
     const updatedPending = new Map(get().pendingEscalations);
     const count = updatedPending.get(agentId) || 0;
@@ -210,7 +244,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const state = get();
     const updatedAgents = new Map(state.agents);
     for (const [id, a] of updatedAgents.entries()) {
-      updatedAgents.set(id, { ...a, pendingEscalations: 0 });
+      updatedAgents.set(id, { ...a, pendingEscalations: 0, riskScore: 0.0 });
     }
     set({
       agents: updatedAgents,

@@ -1,6 +1,7 @@
 import { useRef, useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
+import { Billboard, Text } from "@react-three/drei";
 import { useGraphStore } from "../../stores/useGraphStore";
 import { OUTCOME_VISUAL_MAP } from "../../utils/particleMath";
 
@@ -30,17 +31,19 @@ export function AgentNodesMesh({ agentPositions }: AgentNodesMeshProps) {
   const count = agentList.length;
 
   // Geometry & Material references for clean unmount disposal
-  const sphereGeo = useMemo(() => new THREE.SphereGeometry(0.45, 24, 24), []);
+  const sphereGeo = useMemo(() => new THREE.SphereGeometry(0.48, 24, 24), []);
   const sphereMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        roughness: 0.25,
-        metalness: 0.2,
+        roughness: 0.2,
+        metalness: 0.3,
+        emissive: "#1E3A8A",
+        emissiveIntensity: 0.4,
       }),
     [],
   );
 
-  const badgeGeo = useMemo(() => new THREE.TorusGeometry(0.55, 0.05, 12, 32), []);
+  const badgeGeo = useMemo(() => new THREE.TorusGeometry(0.62, 0.05, 12, 32), []);
   const badgeMat = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
@@ -60,7 +63,7 @@ export function AgentNodesMesh({ agentPositions }: AgentNodesMeshProps) {
     };
   }, [sphereGeo, sphereMat, badgeGeo, badgeMat]);
 
-  // Update instance matrices and colors in useFrame (or on changes)
+  // Update instance matrices and colors in useFrame
   useFrame(({ clock }) => {
     if (!meshRef.current) return;
     const time = clock.getElapsedTime();
@@ -97,7 +100,6 @@ export function AgentNodesMesh({ agentPositions }: AgentNodesMeshProps) {
       if (badgeMeshRef.current) {
         const hasPending = (agent.pendingEscalations || 0) > 0;
         if (hasPending) {
-          // Pulsing scale and slow spin around Y axis
           const pulse = 1.0 + 0.15 * Math.sin(time * 4 + i);
           tempObject.position.set(pos[0], pos[1] + 0.1, pos[2]);
           tempObject.scale.set(pulse, pulse, pulse);
@@ -155,6 +157,30 @@ export function AgentNodesMesh({ agentPositions }: AgentNodesMeshProps) {
         ref={badgeMeshRef}
         args={[badgeGeo, badgeMat, count]}
       />
+
+      {/* SDF Billboard Labels above nodes */}
+      {agentList.map((agent) => {
+        const pos = agentPositions.get(agent.id);
+        if (!pos) return null;
+        const isSelected = selectedNodeId === agent.id;
+        const isHovered = hoveredNodeId === agent.id;
+        return (
+          <group key={agent.id} position={[pos[0], pos[1] + 0.85, pos[2]]}>
+            <Billboard>
+              <Text
+                fontSize={0.28}
+                color={isSelected ? "#38BDF8" : isHovered ? "#93C5FD" : "#CBD5E1"}
+                anchorX="center"
+                anchorY="bottom"
+                outlineWidth={0.02}
+                outlineColor="#020617"
+              >
+                {agent.name}
+              </Text>
+            </Billboard>
+          </group>
+        );
+      })}
     </group>
   );
 }

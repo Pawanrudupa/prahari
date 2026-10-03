@@ -48,9 +48,9 @@ export function LandingFooter() {
         </div>
 
         <p className="text-[11px] text-slate-500 font-mono text-center md:text-right">
-          Open Source under Apache 2.0 / MIT.
+          Open Source under the MIT License.
           <br />
-          Built for enterprise agent governance and DPDP compliance telemetry.
+          Built for agent governance and DPDP compliance telemetry.
         </p>
       </div>
     </footer>

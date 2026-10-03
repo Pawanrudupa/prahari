@@ -2,11 +2,11 @@ import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
 test.describe("Public Landing Page Smoke & Interaction", () => {
-  test("renders hero, problem section, pipeline topology, and interacts with attack", async ({
+  test("renders hero, problem section, pipeline topology, and interacts with all 4 simulation buttons", async ({
     page,
   }) => {
     await page.goto("/");
-    await expect(page.getByText("A sentinel for AI agents")).toBeVisible();
+    await expect(page.getByText(/A sentinel for/i)).toBeVisible();
     await expect(
       page.getByText("OWASP Top 10 for Agentic Applications"),
     ).toBeVisible();
@@ -14,16 +14,31 @@ test.describe("Public Landing Page Smoke & Interaction", () => {
       page.getByText("The Agent Journey: Intercepting Function Calls"),
     ).toBeVisible();
 
-    // Verify Send an attack button
+    // Scroll pipeline section into view
+    const pipelineSection = page.locator("#pipeline");
+    await pipelineSection.scrollIntoViewIfNeeded();
+
+    // Verify 4 simulation buttons exist
+    await expect(page.getByRole("button", { name: /send benign/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /send pii/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /send bulk export/i })).toBeVisible();
     const attackBtn = page.getByRole("button", { name: /send an attack/i });
     await expect(attackBtn).toBeVisible();
-    await attackBtn.click();
 
-    // Verify shattered alert appears
+    // Trigger attack simulation
+    await attackBtn.click();
     await expect(
       page.getByText(/Prompt injection shattered at Gate 03/i),
     ).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("SHATTERED", { exact: true })).toBeVisible();
+    await expect(page.locator("#pipeline").getByText("DENY").first()).toBeVisible();
+
+    // Trigger benign simulation
+    const benignBtn = page.getByRole("button", { name: /send benign/i });
+    await expect(benignBtn).toBeEnabled({ timeout: 10000 });
+    await benignBtn.click();
+    await expect(
+      page.getByText(/Allowed: Verified capability grant/i),
+    ).toBeVisible({ timeout: 10000 });
 
     // Verify Precedence invariant section
     await expect(
@@ -44,7 +59,6 @@ test.describe("Public Landing Page Smoke & Interaction", () => {
 
   test("runs accessibility scan on Landing Page", async ({ page }) => {
     await page.goto("/");
-    // Analyze accessibility with axe-core
     const accessibilityScanResults = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa"])
       .disableRules(["color-contrast"]) // 3D canvas labels / ambient canvas overlays
@@ -83,7 +97,7 @@ test.describe("Login Page Smoke & Accessibility", () => {
     expect(criticalViolations).toEqual([]);
   });
 
-  test("dev session bypass logs in and redirects to console", async ({
+  test("dev session bypass logs in and renders Constellation HD console", async ({
     page,
   }) => {
     await page.goto("/login");
@@ -94,5 +108,22 @@ test.describe("Login Page Smoke & Accessibility", () => {
     // Should redirect to /app (or /app/constellation)
     await page.waitForURL(/\/app/, { timeout: 10000 });
     await expect(page).toHaveURL(/\/app/);
+
+    // Verify KPI Strip elements
+    await expect(page.getByText(/Rate:/i)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText(/p95:/i)).toBeVisible();
+    await expect(page.getByText(/Ledger:/i)).toBeVisible();
+
+    // Verify Camera Presets
+    await expect(page.getByRole("button", { name: /overview/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /follow/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /top-down/i })).toBeVisible();
+
+    // Verify Live Event Feed & Legend
+    await expect(page.getByText("Live Event Feed")).toBeVisible();
+    await expect(page.getByText("Legend")).toBeVisible();
+
+    // Verify Simulator Controller
+    await expect(page.getByText("SIMULATOR:")).toBeVisible();
   });
 });

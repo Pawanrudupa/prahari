@@ -11,7 +11,7 @@ export function ArchitectureSection() {
   ];
 
   return (
-    <section id="architecture" className="py-24 border-b border-white/[0.06] bg-slate-950/60 relative">
+    <section id="architecture" className="py-24 scroll-mt-20 border-b border-white/[0.06] bg-slate-950/60 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-sky-500/30 bg-sky-500/10 mb-4 text-xs font-mono font-medium text-sky-300">
@@ -24,7 +24,7 @@ export function ArchitectureSection() {
           </h2>
 
           <p className="mt-4 text-slate-300 text-sm sm:text-base leading-relaxed">
-            Prahari operates as an inline reverse-proxy positioned between agent runtimes and MCP tool servers, maintaining sub-30ms p95 evaluation overhead.
+            Prahari operates as an inline reverse-proxy positioned between agent runtimes and MCP tool servers, with measured p95 ~23 ms (local benchmark, 200 sequential calls, real Postgres + Redis).
           </p>
         </div>
 
@@ -60,8 +60,8 @@ export function ArchitectureSection() {
                   8-gate pipeline: Auth &rarr; Schema &rarr; Injection &rarr; PII &rarr; Policy &rarr; Limits &rarr; Risk &rarr; Audit.
                 </p>
               </div>
-              <div className="mt-4 pt-2 border-t border-cyan-500/20 text-[10px] text-cyan-300 font-semibold">
-                p95 &lt; 25ms Evaluation
+              <div className="mt-4 pt-2 border-t border-cyan-500/20 text-[10px] text-cyan-300 font-semibold leading-relaxed">
+                measured p95 ~23 ms (local benchmark, 200 sequential calls, real Postgres + Redis)
               </div>
             </div>
 

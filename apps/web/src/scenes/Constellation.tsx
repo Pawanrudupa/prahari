@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
+import { Camera, Bot, Layers } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useGraphStore } from "../stores/useGraphStore";
 import { ConstellationCanvas } from "../components/3d/ConstellationCanvas";
+import { KpiStrip } from "../components/hud/KpiStrip";
+import { LiveEventFeed } from "../components/hud/LiveEventFeed";
+import { ConstellationLegend } from "../components/hud/ConstellationLegend";
+import { QualitySelector } from "../components/hud/QualitySelector";
+import { SimulatorController } from "../components/hud/SimulatorController";
+import { CommandPalette } from "../components/hud/CommandPalette";
 
 function hasWebGL(): boolean {
   try {
@@ -20,8 +27,8 @@ function hasWebGL(): boolean {
 export function Constellation() {
   const reducedMotion = useAppStore((s) => s.reducedMotion);
   const webglLost = useGraphStore((s) => s.webglLost);
-  const agents = useGraphStore((s) => s.agents);
-  const tools = useGraphStore((s) => s.tools);
+  const cameraPreset = useGraphStore((s) => s.cameraPreset);
+  const setCameraPreset = useGraphStore((s) => s.setCameraPreset);
 
   const [webglSupported, setWebglSupported] = useState<boolean>(true);
   const [isDegraded, setIsDegraded] = useState<boolean>(false);
@@ -64,41 +71,89 @@ export function Constellation() {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#070A12]">
+      {/* 3D Constellation Canvas */}
       <ConstellationCanvas
         isDegraded={isDegraded}
         reducedMotion={reducedMotion}
       />
 
-      {/* Lightweight HUD / Status Bar */}
-      <div className="absolute top-4 left-4 z-10 flex items-center space-x-3 pointer-events-none">
-        <div className="rounded-lg bg-slate-900/70 border border-slate-800/80 px-3 py-1.5 backdrop-blur-md shadow-md text-xs font-mono text-slate-300 pointer-events-auto flex items-center gap-3">
-          <span className="flex items-center gap-1.5 text-blue-400">
-            <span className="h-2 w-2 rounded-full bg-blue-400" />
-            Agents: {agents.size}
-          </span>
-          <span className="text-slate-600">|</span>
-          <span className="flex items-center gap-1.5 text-slate-400">
-            <span className="h-2 w-2 rounded-full bg-slate-400" />
-            Tools: {tools.size}
-          </span>
+      {/* Top HUD Row */}
+      <div className="absolute top-3 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-3 pointer-events-none">
+        {/* KPI Strip */}
+        <div className="pointer-events-auto">
+          <KpiStrip />
         </div>
 
-        {/* Degraded mode toggle */}
-        <button
-          onClick={() => setIsDegraded((d) => !d)}
-          className={`pointer-events-auto rounded-lg px-2.5 py-1 text-xs font-mono border transition-colors ${
-            isDegraded
-              ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-              : "bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200"
-          }`}
-          title="Toggle low-power/degraded rendering mode"
-        >
-          {isDegraded ? "Low-Power Mode (100 particles)" : "High Quality"}
-        </button>
+        {/* Controls: Camera Presets, Quality, Command Palette */}
+        <div className="pointer-events-auto flex items-center gap-2">
+          {/* Camera Preset Buttons */}
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-slate-900/80 p-1 backdrop-blur-md shadow-md text-xs font-mono text-slate-300">
+            <button
+              onClick={() => setCameraPreset("overview")}
+              className={`px-2 py-1 rounded transition cursor-pointer flex items-center gap-1 ${
+                cameraPreset === "overview"
+                  ? "bg-cyan-500/20 text-cyan-300 font-semibold"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Overview angle (35-deg tilt)"
+            >
+              <Camera className="w-3 h-3 text-cyan-400" />
+              <span>Overview</span>
+            </button>
+
+            <button
+              onClick={() => setCameraPreset("follow_agent")}
+              className={`px-2 py-1 rounded transition cursor-pointer flex items-center gap-1 ${
+                cameraPreset === "follow_agent"
+                  ? "bg-cyan-500/20 text-cyan-300 font-semibold"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Focus selected agent node"
+            >
+              <Bot className="w-3 h-3 text-blue-400" />
+              <span>Follow</span>
+            </button>
+
+            <button
+              onClick={() => setCameraPreset("top_down")}
+              className={`px-2 py-1 rounded transition cursor-pointer flex items-center gap-1 ${
+                cameraPreset === "top_down"
+                  ? "bg-cyan-500/20 text-cyan-300 font-semibold"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Top-down orbital perspective"
+            >
+              <Layers className="w-3 h-3 text-sky-400" />
+              <span>Top-Down</span>
+            </button>
+          </div>
+
+          <QualitySelector
+            isDegraded={isDegraded}
+            onToggleDegraded={setIsDegraded}
+          />
+
+          <CommandPalette />
+        </div>
+      </div>
+
+      {/* Right Column: Live Event Feed & Legend */}
+      <div className="absolute top-16 right-4 z-20 flex flex-col gap-3 pointer-events-none">
+        <div className="pointer-events-auto">
+          <LiveEventFeed />
+        </div>
+        <div className="pointer-events-auto w-80">
+          <ConstellationLegend />
+        </div>
+      </div>
+
+      {/* Bottom Bar: Simulator Controller */}
+      <div className="absolute bottom-4 left-4 z-20 pointer-events-auto">
+        <SimulatorController />
       </div>
 
       {reducedMotion && (
-        <div className="absolute bottom-4 left-4 z-10 rounded bg-white/10 px-2 py-1 text-xs font-mono text-slate-400 backdrop-blur-sm">
+        <div className="absolute bottom-4 right-4 z-20 rounded-lg border border-white/10 bg-slate-900/80 px-2.5 py-1 text-xs font-mono text-slate-400 backdrop-blur-md">
           Reduced motion active
         </div>
       )}

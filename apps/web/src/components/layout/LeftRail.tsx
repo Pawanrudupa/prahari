@@ -53,15 +53,20 @@ export function LeftRail() {
         }
 
         return (
-          <Tooltip key={item.path} content={`${item.label} (Roadmap / Planned)`} side="right">
-            <button
-              disabled
-              aria-label={item.label}
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 opacity-30 cursor-not-allowed"
-            >
-              <Icon className="w-5 h-5" />
-            </button>
-          </Tooltip>
+          <div key={item.path} className="flex flex-col items-center">
+            {item.path === "/app/sessions" && (
+              <div className="w-6 h-[1px] bg-white/[0.08] my-2" />
+            )}
+            <Tooltip content={`${item.label} (Roadmap / Planned)`} side="right">
+              <button
+                disabled
+                aria-label={item.label}
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 opacity-30 cursor-not-allowed"
+              >
+                <Icon className="w-5 h-5" />
+              </button>
+            </Tooltip>
+          </div>
         );
       })}
     </nav>

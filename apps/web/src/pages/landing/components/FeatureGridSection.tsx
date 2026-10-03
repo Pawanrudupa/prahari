@@ -33,13 +33,13 @@ export function FeatureGridSection() {
     },
     {
       title: "Human Approvals Queue",
-      status: "Active" as const,
+      status: "In progress" as const,
       description: "Interactive escalation card deck allowing operators to inspect, approve, or deny held actions.",
       icon: <UserCheck className="w-5 h-5 text-purple-400" />,
     },
     {
       title: "Policy Studio & YAML Engine",
-      status: "Active" as const,
+      status: "In progress" as const,
       description: "Declarative policy authoring with version history, dry-run testing, and immediate audit tracking.",
       icon: <FileCode className="w-5 h-5 text-indigo-400" />,
     },
@@ -64,7 +64,7 @@ export function FeatureGridSection() {
   ];
 
   return (
-    <section id="features" className="py-24 border-b border-white/[0.06] bg-slate-950/80 relative">
+    <section id="features" className="py-24 scroll-mt-20 border-b border-white/[0.06] bg-slate-950/80 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 mb-4 text-xs font-mono font-medium text-cyan-300">
@@ -72,11 +72,11 @@ export function FeatureGridSection() {
           </div>
 
           <h2 className="text-3xl sm:text-4xl font-bold font-display text-slate-100 tracking-tight">
-            Enterprise-grade governance capabilities.
+            Governance capabilities and roadmap.
           </h2>
 
           <p className="mt-4 text-slate-300 text-sm sm:text-base leading-relaxed">
-            Honest breakdown of implemented vs planned roadmap features. No fabricated metrics, no exaggerated marketing claims.
+            Honest breakdown of implemented vs in-progress and planned roadmap features. No fabricated metrics, no exaggerated marketing claims.
           </p>
         </div>
 
@@ -93,7 +93,13 @@ export function FeatureGridSection() {
                     {cap.icon}
                   </div>
                   <Badge
-                    variant={cap.status === "Active" ? "allow" : "escalate"}
+                    variant={
+                      cap.status === "Active"
+                        ? "allow"
+                        : cap.status === "In progress"
+                          ? "warning"
+                          : "escalate"
+                    }
                     size="sm"
                   >
                     {cap.status}
