@@ -2,7 +2,7 @@ import { useRef, useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { Billboard, Text } from "@react-three/drei";
-import { useGraphStore } from "../../stores/useGraphStore";
+import { useGraphStore, deriveAgentVisualTint } from "../../stores/useGraphStore";
 import { OUTCOME_VISUAL_MAP } from "../../utils/particleMath";
 
 interface AgentNodesMeshProps {
@@ -84,13 +84,14 @@ export function AgentNodesMesh({ agentPositions }: AgentNodesMeshProps) {
       tempObject.updateMatrix();
       meshRef.current.setMatrixAt(i, tempObject.matrix);
 
-      // Color tinting
+      // Color tinting derived from outcome with time decay
+      const tint = deriveAgentVisualTint(agent);
       if (isSelected) {
         tempColor.copy(selectedColor);
       } else if (isHovered) {
         tempColor.copy(hoveredColor);
-      } else if (agent.riskScore && agent.riskScore > 0.6) {
-        tempColor.setHSL(0.05, 0.9, 0.55); // Amber/Red high risk tint
+      } else if (tint.isTinted) {
+        tempColor.set(tint.colorHex);
       } else {
         tempColor.copy(baseColor);
       }

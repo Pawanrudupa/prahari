@@ -26,14 +26,26 @@ async def require_admin_token(
     elif x_admin_token:
         token = x_admin_token.strip()
 
-    if not token or not hmac.compare_digest(token, settings.ADMIN_TOKEN):
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized: invalid or missing admin token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return token
+    if hmac.compare_digest(token, settings.ADMIN_TOKEN):
+        return token
+
+    # Also verify if it is a signed session token with admin role
+    session = verify_session_token(token)
+    if session is not None and session.get("role") == "admin":
+        return token
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Unauthorized: invalid or missing admin token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 async def require_session_or_admin_token(

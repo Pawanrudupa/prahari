@@ -66,6 +66,38 @@ def build_audit_payload(
     }
 
 
+async def record_admin_audit_event(
+    session: AsyncSession,
+    event_type: str,
+    details: dict[str, Any],
+    agent_id: UUID | str | None = None,
+    tool: str | None = None,
+) -> AuditLog:
+    """
+    Append an administrative state-change audit event to the hash chain.
+    In accordance with AGENTS.md invariant: NO raw secrets or API keys are logged.
+    """
+    safe_details = {
+        k: v for k, v in details.items()
+        if "secret" not in k.lower() and (k == "key_prefix" or "key" not in k.lower())
+    }
+    payload = {
+        "event_type": event_type,
+        "agent_id": str(agent_id) if agent_id else "system",
+        "tool": tool or "admin",
+        "args_hash": hashlib.sha256(canonical_json(safe_details).encode("utf-8")).hexdigest(),
+        "data_classes": [],
+        "outcome": "allow",
+        "rule_id": "admin_action",
+        "policy_version": 1,
+        "reason": f"admin_operation:{event_type}",
+        "details": safe_details,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    return await append_audit_log(session, payload)
+
+
+
 async def append_audit_log(session: AsyncSession, payload: dict[str, Any]) -> AuditLog:
     """
     Append an entry to the hash-chained audit log.

@@ -31,4 +31,5 @@ scratch/
 # Playwright
 test-results/
 playwright-report/
+lighthouse-*.json
 

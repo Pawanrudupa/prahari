@@ -16,6 +16,9 @@ export interface AgentNode {
   activityCount?: number;
   riskScore?: number;
   pendingEscalations?: number;
+  lastOutcome?: DecisionOutcome;
+  lastOutcomeTime?: number;
+  escalationTintActive?: boolean;
   position?: [number, number, number];
 }
 

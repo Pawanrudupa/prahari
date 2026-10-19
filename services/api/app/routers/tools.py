@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.service import record_admin_audit_event
 from app.auth.admin import require_admin_token, require_session_or_admin_token
 from app.core.database import get_db
 from app.models.agent import Agent, AgentToolGrant
@@ -69,6 +70,18 @@ async def create_tool(
     await db.commit()
     await db.refresh(tool)
 
+    await record_admin_audit_event(
+        session=db,
+        event_type="tool.created",
+        details={
+            "tool_id": str(tool.id),
+            "name": tool.name,
+            "server": tool.server,
+            "sensitivity": tool.sensitivity,
+        },
+        tool=tool.name,
+    )
+
     return ToolResponse(
         id=tool.id,
         name=tool.name,
@@ -129,7 +142,60 @@ async def grant_tool_to_agent(
         db.add(grant)
         await db.commit()
 
+        await record_admin_audit_event(
+            session=db,
+            event_type="agent.grant_added",
+            details={
+                "agent_id": str(agent_id),
+                "tool_id": str(req.tool_id),
+                "agent_name": agent.name,
+                "tool_name": tool.name,
+            },
+            agent_id=agent_id,
+            tool=tool.name,
+        )
+
     return {"status": "granted", "agent_id": str(agent_id), "tool_id": str(req.tool_id)}
+
+
+@router.delete(
+    "/v1/agents/{agent_id}/grants/{tool_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Revoke an agent's grant to a specific tool (Admin only)",
+    dependencies=[Depends(require_admin_token)],
+)
+async def revoke_tool_from_agent(
+    agent_id: UUID,
+    tool_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    agent = await db.get(Agent, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+
+    tool = await db.get(Tool, tool_id)
+    if tool is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
+
+    existing = await db.get(AgentToolGrant, (agent_id, tool_id))
+    if existing is not None:
+        await db.delete(existing)
+        await db.commit()
+
+        await record_admin_audit_event(
+            session=db,
+            event_type="agent.grant_revoked",
+            details={
+                "agent_id": str(agent_id),
+                "tool_id": str(tool_id),
+                "agent_name": agent.name,
+                "tool_name": tool.name,
+            },
+            agent_id=agent_id,
+            tool=tool.name,
+        )
+
+    return {"status": "revoked", "agent_id": str(agent_id), "tool_id": str(tool_id)}
 
 
 @router.get(

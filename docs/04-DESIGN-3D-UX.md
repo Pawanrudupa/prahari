@@ -109,10 +109,13 @@ A scroll-driven, high-credibility narrative with zero backend dependencies:
    - Visual precedence tree: `deny > escalate > redact > allow > default deny`.
 5. **Feature Matrix**:
    - Live Constellation (Active)
-   - Hash-Chained Audit & Signed Checkpoints (Active)
-   - Capability Grants: No-grants = No-tools (Active)
-   - Policy Studio & Monaco Authoring (Active)
-   - Approvals Queue (Active)
+   - Agents & Tools Registry (Active — Checkpoint UI-2a)
+   - Hash-Chained Audit & Signed Checkpoints (Active — Checkpoint UI-2a)
+   - Capability Grants: No-grants = No-tools (Active — Checkpoint UI-2a)
+   - Settings & WebGL GPU Detection (Active — Checkpoint UI-2a)
+   - Human Approvals Queue (*In Progress — Checkpoint UI-2b*)
+   - Policy Studio & Monaco Authoring (*In Progress — Checkpoint UI-2b*)
+   - Session DAG & Timeline Scrubber (*In Progress — Checkpoint UI-2b*)
    - RAG Explanations & Semantic Search (*Planned*)
    - OWASP Red-Team Adversarial Replay (*Planned*)
    - DPDP Evidence Compliance Pack (*Planned with legal disclaimer*)
@@ -121,6 +124,34 @@ A scroll-driven, high-credibility narrative with zero backend dependencies:
    - Technical stack: FastAPI, PostgreSQL 16 + pgvector, Redis, React 19, Three.js, Vite.
    - Honest "Pre-Alpha" open-source status badge and GitHub repository link.
    - DPDP notice: *"Prahari provides telemetry and technical evidence flagging; this software does not constitute formal legal compliance advice."*
+
+---
+
+## Checkpoint UI-2a Console Modules
+
+### 1. Agents & Tools Registry (`/app/agents`)
+- **Agent Lifecycle**: View active agents, status toggle (active/disabled PATCH via `/v1/agents/{id}`), single-use API key reveal dialog with copy-to-clipboard button.
+- **Activity Telemetry**: Sparkline chart displaying call volume per agent over selectable time windows (`1h`, `24h`, `7d`) from `GET /v1/agents/{id}/activity?window=`.
+- **Tool Registry**: MCP tool server list and registration modal (`POST /v1/tools`).
+- **Capability Grants**: Matrix view displaying assigned tools with default-deny semantics. Clear visual indicator that without an explicit grant, an agent cannot invoke any tool. Add grant modal (`POST /v1/agents/{id}/grants`) and revoke button (`DELETE /v1/agents/{id}/grants/{tool_id}`).
+- **Admin Invariant**: Every lifecycle change (enable/disable, grant, revoke, tool creation, key rotation) writes an immutable audit log record.
+
+### 2. Decisions & Audit Virtualized Log (`/app/decisions`)
+- **High-Performance Virtualization**: Virtualized row rendering via `@tanstack/react-virtual` capable of smooth scrolling over 10,000+ entries.
+- **Indexed Server-Side Filters**: Filters for outcome (`ALLOW`, `REDACT`, `ESCALATE`, `DENY`), agent, tool, time range, and rule ID, backed by PostgreSQL composite indexes.
+- **Decision Detail Drawer**: Slide-over panel displaying rule evaluated, policy version, reason, SHA-256 arguments hash, detected data classes, latency in milliseconds, audit sequence number, and cryptographically linked hash. Raw argument payloads are strictly excluded to preserve privacy.
+- **Cryptographic Chain Verification**: One-click modal triggering `POST /v1/audit/verify`. Recalculates SHA-256 parent hash links, checks HMAC sequence checkpoints, and presents pass/fail banner, record count, and head sequence/hash.
+
+### 3. Settings & Hardware Telemetry (`/app/settings`)
+- **GPU Hardware Telemetry**: Live readout of the active unmasked WebGL renderer string (e.g. verifying NVIDIA GeForce RTX 3050 vs. integrated graphics).
+- **Quality Preset Selection**: Choice of Auto (rolling median frame time threshold), High (DPR 2, full bloom, continuous particles), or Low (DPR 1, simplified shaders, particle pooling caps).
+- **Reduced Motion Support**: One-click toggle persisted to `localStorage` and synchronized with CSS `prefers-reduced-motion` to disable 3D camera sweeps and particle physics.
+- **Theme Enforcement**: Dark theme lock (WCAG AA contrast verified).
+- **Session Controls & About**: Build version, runtime environment, and sign-out action.
+
+### 4. LeftRail Roadmap Partitioning
+- Active links for fully built routes (`/app/constellation`, `/app/agents`, `/app/decisions`, `/app/settings`).
+- Unbuilt roadmap capabilities (`Approvals Queue`, `Policy Studio`, `Session DAG`) grouped under a dedicated "Roadmap" section with descriptive hover tooltips, avoiding broken links or dead-ends.
 
 ---
 

@@ -160,9 +160,11 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       }
     }
 
-    if (event.outcome === "escalate") {
-      const current = updatedPendingEscalations.get(targetAgentId) || 0;
-      updatedPendingEscalations.set(targetAgentId, current + 1);
+    const isEscalate = event.outcome === "escalate";
+    const currentPending = updatedPendingEscalations.get(targetAgentId) || 0;
+    const newPending = isEscalate ? currentPending + 1 : currentPending;
+    if (isEscalate) {
+      updatedPendingEscalations.set(targetAgentId, newPending);
     }
 
     if (agent) {
@@ -170,7 +172,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         ...agent,
         activityCount: (agent.activityCount || 0) + 1,
         riskScore: Math.max(agent.riskScore || 0, event.risk_score),
-        pendingEscalations: updatedPendingEscalations.get(targetAgentId) || 0,
+        pendingEscalations: newPending,
+        escalationTintActive: newPending > 0 || isEscalate,
+        lastOutcome: event.outcome,
+        lastOutcomeTime: Date.now(),
       });
     }
 
@@ -219,10 +224,11 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   resolveEscalation: (agentId: string) => {
     const updatedPending = new Map(get().pendingEscalations);
     const count = updatedPending.get(agentId) || 0;
-    if (count <= 1) {
+    const newCount = count <= 1 ? 0 : count - 1;
+    if (newCount === 0) {
       updatedPending.delete(agentId);
     } else {
-      updatedPending.set(agentId, count - 1);
+      updatedPending.set(agentId, newCount);
     }
 
     const updatedAgents = new Map(get().agents);
@@ -230,7 +236,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     if (agent) {
       updatedAgents.set(agentId, {
         ...agent,
-        pendingEscalations: updatedPending.get(agentId) || 0,
+        pendingEscalations: newCount,
+        escalationTintActive: newCount > 0,
+        // Legitimate risk data (agent.riskScore) is preserved without destruction
       });
     }
 
@@ -244,7 +252,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const state = get();
     const updatedAgents = new Map(state.agents);
     for (const [id, a] of updatedAgents.entries()) {
-      updatedAgents.set(id, { ...a, pendingEscalations: 0, riskScore: 0.0 });
+      updatedAgents.set(id, {
+        ...a,
+        pendingEscalations: 0,
+        escalationTintActive: false,
+        lastOutcomeTime: undefined,
+        // Legitimate risk data (a.riskScore) is preserved; only visual tint is cleared
+      });
     }
     set({
       agents: updatedAgents,
@@ -272,3 +286,84 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     });
   },
 }));
+
+export interface AgentVisualTint {
+  isTinted: boolean;
+  tintType: "none" | "escalate" | "deny" | "risk";
+  colorHex: string;
+  intensity: number;
+}
+
+/**
+ * Derives the visual alert tint for an agent from recent outcomes with time decay.
+ * Prevents permanent amber/violet lock without destroying legitimate underlying risk scores.
+ * Escalation tint clears immediately when resolved or cleared via clearEscalations().
+ */
+export function deriveAgentVisualTint(
+  agent: AgentNode,
+  now: number = Date.now(),
+): AgentVisualTint {
+  // 1. If agent has unresolved active escalations, show violet escalation tint
+  if (
+    agent.pendingEscalations &&
+    agent.pendingEscalations > 0 &&
+    agent.escalationTintActive !== false
+  ) {
+    return {
+      isTinted: true,
+      tintType: "escalate",
+      colorHex: "#A78BFA",
+      intensity: 1.0,
+    };
+  }
+
+  // 2. Exponential time decay for recent outcomes (decay half-life of 6s, cut-off at 20s)
+  if (agent.lastOutcomeTime && agent.lastOutcome) {
+    const elapsedMs = Math.max(0, now - agent.lastOutcomeTime);
+    const DECAY_WINDOW_MS = 20_000;
+    if (elapsedMs < DECAY_WINDOW_MS) {
+      const factor = Math.exp(-elapsedMs / 6_000);
+      if (factor > 0.05) {
+        if (agent.lastOutcome === "deny") {
+          return {
+            isTinted: true,
+            tintType: "deny",
+            colorHex: "#F43F5E",
+            intensity: factor,
+          };
+        }
+        if (agent.lastOutcome === "escalate" && agent.escalationTintActive !== false) {
+          return {
+            isTinted: true,
+            tintType: "escalate",
+            colorHex: "#A78BFA",
+            intensity: factor,
+          };
+        }
+      }
+    }
+  }
+
+  // 3. Persistent high risk without unhandled escalation (amber tint)
+  // Only applies if escalationTintActive is not explicitly suppressed
+  if (
+    agent.riskScore &&
+    agent.riskScore >= 0.9 &&
+    agent.escalationTintActive !== false
+  ) {
+    return {
+      isTinted: true,
+      tintType: "risk",
+      colorHex: "#F59E0B",
+      intensity: 0.5,
+    };
+  }
+
+  return {
+    isTinted: false,
+    tintType: "none",
+    colorHex: "#60A5FA",
+    intensity: 0,
+  };
+}
+

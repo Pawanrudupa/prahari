@@ -53,10 +53,13 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `GET /v1/auth/dev-session` -> `{session_token, mode: "development-bypass"}` (development-only bypass, rejected in production with HTTP 404)
 - `POST /v1/auth/ws-ticket` (admin or session auth) -> `{ticket, expires_in}` (mints a single-use, 30-second ticket for WebSocket connection; prevents token exposure in URLs and access logs)
 - `POST /v1/gateway/tool-call` body `{agent_key, session_id, tool, args, purpose?, context?{user_prompt, tool_outputs[]}}` -> `{decision, rule_id, reason, redacted_args?, approval_id?, decision_id, data_classes}`
-- `GET/POST /v1/agents` (admin only; returns HTTP 409 Conflict if name already exists)
-- `POST /v1/agents/{id}/rotate-key` (admin only) -> `{id, name, api_key}` (rotates agent credentials idempotently)
-- `GET /v1/tools` (admin/session), `POST /v1/tools` (admin only)
-- `POST /v1/agents/{id}/grants` (admin only), `GET /v1/agents/{id}/grants` (admin/session)
+- `GET/POST /v1/agents` (admin only; returns HTTP 409 Conflict if name already exists; writes audit event on creation)
+- `PATCH /v1/agents/{id}` body `{status: "active"|"disabled"}` (admin only) -> `{id, name, owner, role, status, created_at}` (enables or disables an agent; writes `agent.status_updated` audit event)
+- `POST /v1/agents/{id}/rotate-key` (admin only) -> `{id, name, api_key}` (rotates agent credentials idempotently; writes `agent.key_rotated` audit event)
+- `GET /v1/agents/{id}/activity?window=1h|24h|7d` (admin/session) -> `{agent_id, window, points: [{timestamp, count, allow, redact, escalate, deny}]}` (timeseries activity sparkline)
+- `GET /v1/tools` (admin/session), `POST /v1/tools` (admin only; writes `tool.created` audit event)
+- `POST /v1/agents/{id}/grants` (admin only; writes `agent.grant_added` audit event), `DELETE /v1/agents/{id}/grants/{tool_id}` (admin only; writes `agent.grant_revoked` audit event), `GET /v1/agents/{id}/grants` (admin/session)
+- `GET /v1/decisions?cursor=&limit=&outcome=&agent=&tool=&rule_id=&from_time=&to_time=` (admin/session) -> `{items, next_cursor, has_more, total_count}` (cursor-paginated, multi-filter searchable decisions from hash-chained audit log)
 - `GET /v1/graph/snapshot` -> `{latest_audit_seq, agents, tools, grants, recent_decisions}` (for 3D constellation initial load & subscribe-then-snapshot deduplication)
 - `GET/POST /v1/policies`, `POST /v1/policies/{id}/versions`, `POST /v1/policies/{id}/activate`, `POST /v1/policies/{id}/test`
 - `POST /v1/policies/author` body `{instruction}` -> draft YAML + generated test cases
@@ -69,7 +72,7 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `GET /v1/audit/verify` (admin only), `POST /v1/audit/checkpoint` (admin only)
 - `GET /v1/reports/dpdp?from=&to=`
 - `POST /v1/incidents/{id}/circuit-break`
-- `POST /v1/dev/simulate` body `{scenario: string, count: int, seed: int, stress?: bool}` -> `{scenario, count, seed, summary: {allow, redact, escalate, deny}, decisions}` (development and test environments only; returns HTTP 404 in production; concurrency guarded via lock returning HTTP 409 Conflict if already running)
+- `POST /v1/dev/simulate` body `{scenario: string, count: int, seed: int, stress?: bool}` -> `{scenario, count, seed, summary: {allow, redact, escalate, deny}, decisions}` (development and test environments only; returns HTTP 404 in production; concurrency guarded via Redis distributed lock with 120s TTL auto-expiry returning HTTP 409 Conflict if already running)
 
 ## WebSocket `/ws/events`
 Authentication: Requires single-use ticket query param `?ticket=<ws_ticket>` (obtained from `POST /v1/auth/ws-ticket`, TTL 30s). `?token=` query parameters are strictly forbidden and rejected to prevent credentials from being logged in reverse proxy access logs, URLs, or browser history.

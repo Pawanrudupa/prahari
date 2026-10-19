@@ -123,6 +123,7 @@ export function AgentJourneySection() {
 
   return (
     <section id="pipeline" ref={sectionRef} className="py-24 scroll-mt-20 border-b border-white/[0.06] bg-slate-950 relative">
+      <div id="journey" className="absolute -top-20" />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">

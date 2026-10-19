@@ -24,7 +24,7 @@ export function ArchitectureSection() {
           </h2>
 
           <p className="mt-4 text-slate-300 text-sm sm:text-base leading-relaxed">
-            Prahari operates as an inline reverse-proxy positioned between agent runtimes and MCP tool servers, with measured p95 ~23 ms (local benchmark, 200 sequential calls, real Postgres + Redis).
+            Prahari operates as an inline reverse-proxy positioned between agent runtimes and MCP tool servers, with measured p95 ~23–26 ms (local benchmark, 200 sequential calls, real Postgres + Redis).
           </p>
         </div>
 
@@ -61,7 +61,7 @@ export function ArchitectureSection() {
                 </p>
               </div>
               <div className="mt-4 pt-2 border-t border-cyan-500/20 text-[10px] text-cyan-300 font-semibold leading-relaxed">
-                measured p95 ~23 ms (local benchmark, 200 sequential calls, real Postgres + Redis)
+                measured p95 ~23–26 ms (local benchmark, 200 sequential calls, real Postgres + Redis)
               </div>
             </div>
 

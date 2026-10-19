@@ -1,6 +1,7 @@
 """Development-only endpoints for simulation control and test automation."""
 
 import asyncio
+import contextlib
 import sys
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.core.redis import redis_client
 
 # Ensure repository root is on sys.path for services.simulator import
 repo_root = str(Path(__file__).resolve().parents[4])
@@ -20,7 +22,59 @@ from services.simulator.runner import SimulationRunner  # noqa: E402
 
 router = APIRouter(prefix="/v1/dev", tags=["dev"])
 
+SIMULATE_LOCK_KEY = "prahari:dev:simulate:lock"
+SIMULATE_LOCK_TTL_SECONDS = 120
+
 _simulate_lock = asyncio.Lock()
+
+
+class DistributedSimulateLock:
+    """
+    Distributed Redis-backed lock for /v1/dev/simulate ensuring single active run across workers.
+    Includes TTL auto-expiry to release on worker crash/timeout.
+    Gracefully falls back to process-level asyncio.Lock if Redis is unavailable.
+    """
+
+    def __init__(self, key: str = SIMULATE_LOCK_KEY, ttl: int = SIMULATE_LOCK_TTL_SECONDS):
+        self.key = key
+        self.ttl = ttl
+        self._acquired_redis = False
+
+    async def acquire(self) -> bool:
+        # Check in-memory lock first
+        if _simulate_lock.locked():
+            return False
+
+        # Attempt Redis distributed lock (SET NX EX)
+        try:
+            res = await redis_client.set(self.key, "locked", nx=True, ex=self.ttl)
+            if not res:
+                return False
+            self._acquired_redis = True
+        except Exception:
+            # Redis is unreachable (e.g. SQLite offline dev/test) - fallback to in-memory lock
+            pass
+
+        # Also acquire in-memory lock for local thread/task safety
+        await _simulate_lock.acquire()
+        return True
+
+    async def release(self) -> None:
+        if self._acquired_redis:
+            self._acquired_redis = False
+            with contextlib.suppress(Exception):
+                await redis_client.delete(self.key)
+        if _simulate_lock.locked():
+            _simulate_lock.release()
+
+    async def is_locked(self) -> bool:
+        if _simulate_lock.locked():
+            return True
+        try:
+            val = await redis_client.get(self.key)
+            return val is not None
+        except Exception:
+            return False
 
 
 class DevSimulateRequest(BaseModel):
@@ -63,13 +117,15 @@ async def dev_simulate(request: Request, body: DevSimulateRequest) -> DevSimulat
     if settings.ENV not in ("development", "test"):
         raise HTTPException(status_code=404, detail="Endpoint not found")
 
-    if _simulate_lock.locked():
+    lock = DistributedSimulateLock()
+    acquired = await lock.acquire()
+    if not acquired:
         raise HTTPException(
             status_code=409,
             detail="A simulation is already in progress",
         )
 
-    async with _simulate_lock:
+    try:
         transport = httpx.ASGITransport(app=request.app)
         async with httpx.AsyncClient(
             transport=transport,
@@ -89,6 +145,8 @@ async def dev_simulate(request: Request, body: DevSimulateRequest) -> DevSimulat
                 stress=body.stress,
                 client=sim_client,
             )
+    finally:
+        await lock.release()
 
     summary: dict[str, int] = {
         "allow": 0,

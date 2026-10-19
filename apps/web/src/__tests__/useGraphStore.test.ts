@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useGraphStore } from "../stores/useGraphStore";
+import { useGraphStore, deriveAgentVisualTint } from "../stores/useGraphStore";
 import type { DecisionEvent, GraphSnapshot } from "../types/graph";
 
 function makeDecision(seq: number, id = `dec-${seq}`, agentId = "ag-1"): DecisionEvent {
@@ -177,7 +177,7 @@ describe("useGraphStore", () => {
     expect(useGraphStore.getState().webglLost).toBe(true);
   });
 
-  it("resets agent riskScore and pendingEscalations when clearEscalations is called", () => {
+  it("clears escalation tint without destroying legitimate risk data on reset or resolve", () => {
     useGraphStore.getState().applySnapshot({
       latest_audit_seq: 10,
       agents: [{ id: "ag-1", name: "Support-Bot", role: "support", owner: "Ops", status: "active" }],
@@ -193,16 +193,46 @@ describe("useGraphStore", () => {
     };
     useGraphStore.getState().applyEvent(escalateEvent);
 
-    const agentWithRisk = useGraphStore.getState().agents.get("ag-1");
-    expect(agentWithRisk?.pendingEscalations).toBe(1);
-    expect(agentWithRisk?.riskScore).toBe(0.85);
+    const agentWithRisk = useGraphStore.getState().agents.get("ag-1")!;
+    expect(agentWithRisk.pendingEscalations).toBe(1);
+    expect(agentWithRisk.riskScore).toBe(0.85);
+
+    // Visual tint must reflect active escalation
+    const tintBefore = deriveAgentVisualTint(agentWithRisk);
+    expect(tintBefore.isTinted).toBe(true);
+    expect(tintBefore.tintType).toBe("escalate");
+    expect(tintBefore.colorHex).toBe("#A78BFA");
 
     // Call clearEscalations (Reset Badges)
     useGraphStore.getState().clearEscalations();
 
-    const resetAgent = useGraphStore.getState().agents.get("ag-1");
-    expect(resetAgent?.pendingEscalations).toBe(0);
-    expect(resetAgent?.riskScore).toBe(0.0);
+    const resetAgent = useGraphStore.getState().agents.get("ag-1")!;
+    expect(resetAgent.pendingEscalations).toBe(0);
+    // CRITICAL: legitimate riskScore is preserved (not zeroed out)
+    expect(resetAgent.riskScore).toBe(0.85);
     expect(useGraphStore.getState().pendingEscalations.size).toBe(0);
+
+    // Visual tint must now be cleared!
+    const tintAfter = deriveAgentVisualTint(resetAgent);
+    expect(tintAfter.isTinted).toBe(false);
+    expect(tintAfter.tintType).toBe("none");
+
+    // Test resolveEscalation single-step resolution
+    const escalateEvent2: DecisionEvent = {
+      ...makeDecision(12, "dec-12", "ag-1"),
+      outcome: "escalate",
+      risk_score: 0.92,
+    };
+    useGraphStore.getState().applyEvent(escalateEvent2);
+    const agentEscalated2 = useGraphStore.getState().agents.get("ag-1")!;
+    expect(agentEscalated2.pendingEscalations).toBe(1);
+    expect(agentEscalated2.riskScore).toBe(0.92);
+    expect(deriveAgentVisualTint(agentEscalated2).isTinted).toBe(true);
+
+    useGraphStore.getState().resolveEscalation("ag-1");
+    const agentResolved = useGraphStore.getState().agents.get("ag-1")!;
+    expect(agentResolved.pendingEscalations).toBe(0);
+    expect(agentResolved.riskScore).toBe(0.92); // Preserved!
+    expect(deriveAgentVisualTint(agentResolved).isTinted).toBe(false);
   });
 });

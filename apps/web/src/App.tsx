@@ -19,6 +19,15 @@ const Constellation = lazy(() =>
 const TestEffectsPanel = lazy(() =>
   import("./components/controls/TestEffectsPanel").then((m) => ({ default: m.TestEffectsPanel })),
 );
+const AgentsPage = lazy(() =>
+  import("./pages/agents/AgentsPage").then((m) => ({ default: m.AgentsPage })),
+);
+const DecisionsPage = lazy(() =>
+  import("./pages/decisions/DecisionsPage").then((m) => ({ default: m.DecisionsPage })),
+);
+const SettingsPage = lazy(() =>
+  import("./pages/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
 
 const queryClient = new QueryClient();
 
@@ -39,12 +48,32 @@ function ProtectedAppRoute() {
 
   return (
     <AppShell>
-      <Routes>
-        <Route path="/" element={<Constellation />} />
-        <Route path="/constellation" element={<Constellation />} />
-        <Route path="*" element={<Navigate to="/app" replace />} />
-      </Routes>
-      <TestEffectsPanel />
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <>
+                <Constellation />
+                <TestEffectsPanel />
+              </>
+            }
+          />
+          <Route
+            path="/constellation"
+            element={
+              <>
+                <Constellation />
+                <TestEffectsPanel />
+              </>
+            }
+          />
+          <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/decisions" element={<DecisionsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/app" replace />} />
+        </Routes>
+      </Suspense>
     </AppShell>
   );
 }
