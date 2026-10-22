@@ -25,6 +25,15 @@ const AgentsPage = lazy(() =>
 const DecisionsPage = lazy(() =>
   import("./pages/decisions/DecisionsPage").then((m) => ({ default: m.DecisionsPage })),
 );
+const ApprovalsPage = lazy(() =>
+  import("./pages/approvals/ApprovalsPage").then((m) => ({ default: m.ApprovalsPage })),
+);
+const PolicyStudioPage = lazy(() =>
+  import("./pages/policies/PolicyStudioPage").then((m) => ({ default: m.PolicyStudioPage })),
+);
+const SessionDagPage = lazy(() =>
+  import("./pages/sessions/SessionDagPage").then((m) => ({ default: m.SessionDagPage })),
+);
 const SettingsPage = lazy(() =>
   import("./pages/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
@@ -70,6 +79,9 @@ function ProtectedAppRoute() {
           />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/decisions" element={<DecisionsPage />} />
+          <Route path="/approvals" element={<ApprovalsPage />} />
+          <Route path="/policies" element={<PolicyStudioPage />} />
+          <Route path="/sessions" element={<SessionDagPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>

@@ -17,6 +17,12 @@ class ToolCallRequest(BaseModel):
     context: dict[str, Any] | None = Field(
         default=None, description="Attached conversation or prior tool outputs"
     )
+    approval_token: str | None = Field(
+        default=None, description="Single-use token issued upon human approval"
+    )
+    parent_action_id: UUID | None = Field(
+        default=None, description="Parent action ID in multi-step session DAG"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -30,4 +36,5 @@ class ToolCallResponse(BaseModel):
     redacted_args: dict[str, Any] | None = None
     approval_id: UUID | None = None
     decision_id: UUID = Field(default_factory=uuid4)
+    action_id: UUID | None = None
     data_classes: list[str] = Field(default_factory=list)

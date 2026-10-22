@@ -1,5 +1,7 @@
 import contextlib
+import json
 import os
+import sqlite3
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
@@ -16,6 +18,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.main import create_app
 from app.models import Base
+
+sqlite3.register_adapter(list, json.dumps)
 
 TEST_DB_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
 IS_POSTGRES = bool(TEST_DB_URL and ("postgres" in TEST_DB_URL))

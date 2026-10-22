@@ -110,6 +110,7 @@ export function QualitySelector({ isDegraded, onToggleDegraded }: QualitySelecto
       <span className="flex items-center gap-1">
         <Gauge className="w-3.5 h-3.5 text-emerald-400" />
         <span
+          data-testid="hud-fps-readout"
           className={`font-semibold ${
             fps >= 50 ? "text-emerald-400" : fps >= 30 ? "text-amber-400" : "text-rose-400"
           }`}

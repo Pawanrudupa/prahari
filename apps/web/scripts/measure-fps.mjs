@@ -4,6 +4,18 @@ import { execSync } from "child_process";
 const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const PREVIEW_URL = "http://localhost:4173";
 
+function computePercentiles(samples) {
+  if (!samples.length) return { min: 60, median: 60, p5: 60, avg: 60 };
+  const sorted = [...samples].sort((a, b) => a - b);
+  const min = sorted[0];
+  const avg = sorted.reduce((a, b) => a + b, 0) / sorted.length;
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  const p5Index = Math.max(0, Math.floor(sorted.length * 0.05));
+  const p5 = sorted[p5Index];
+  return { min, median, p5, avg };
+}
+
 async function run() {
   console.log("============================================================");
   console.log("PRAHARI GPU PERFORMANCE BENCHMARK (VITE PREVIEW + NVIDIA GPU)");
@@ -101,10 +113,8 @@ async function run() {
     return s;
   });
 
-  const contMin = continuousSamples.length ? Math.min(...continuousSamples) : 60;
-  const contAvg = continuousSamples.length
-    ? continuousSamples.reduce((a, b) => a + b, 0) / continuousSamples.length
-    : 60;
+  const contStats = computePercentiles(continuousSamples);
+  const contHudFps = await page.$eval('[data-testid="hud-fps-readout"]', (el) => el.textContent?.trim() || "N/A").catch(() => "N/A");
 
   // =========================================================================
   // 2. MEASURE STRESS MODE (50 Agents + 150 Tools = 200 Nodes)
@@ -143,10 +153,8 @@ async function run() {
 
   await page.waitForTimeout(3000);
   const stressSamples = await page.evaluate(() => window._fpsSamples || []);
-  const stressMin = stressSamples.length ? Math.min(...stressSamples) : 60;
-  const stressAvg = stressSamples.length
-    ? stressSamples.reduce((a, b) => a + b, 0) / stressSamples.length
-    : 60;
+  const stressStats = computePercentiles(stressSamples);
+  const stressHudFps = await page.$eval('[data-testid="hud-fps-readout"]', (el) => el.textContent?.trim() || "N/A").catch(() => "N/A");
 
   console.log("\n============================================================");
   console.log("GPU PERFORMANCE BENCHMARK REPORT (VITE PREVIEW + HEADED CHROME)");
@@ -155,13 +163,19 @@ async function run() {
   console.log("Resolution     : 1600x1000 (DPR 2.0 selective bloom + instanced)");
   console.log("Target Server  : Vite Preview (http://localhost:4173)");
   console.log("------------------------------------------------------------");
-  console.log("1. Continuous Traffic Mode (Interleaved Traffic):");
-  console.log(`   - Minimum FPS : ${contMin.toFixed(1)} FPS`);
-  console.log(`   - Average FPS : ${contAvg.toFixed(1)} FPS`);
+  console.log("1. Continuous Traffic Mode (3 canonical agents, continuous):");
+  console.log(`   - In-App HUD Reading : ${contHudFps}`);
+  console.log(`   - Minimum FPS        : ${contStats.min.toFixed(1)} FPS`);
+  console.log(`   - Median FPS         : ${contStats.median.toFixed(1)} FPS`);
+  console.log(`   - 5th Percentile (p5): ${contStats.p5.toFixed(1)} FPS`);
+  console.log(`   - Average FPS        : ${contStats.avg.toFixed(1)} FPS`);
   console.log("------------------------------------------------------------");
   console.log("2. Stress Mode (200 Nodes: 50 Agents + 150 Tools):");
-  console.log(`   - Minimum FPS : ${stressMin.toFixed(1)} FPS`);
-  console.log(`   - Average FPS : ${stressAvg.toFixed(1)} FPS`);
+  console.log(`   - In-App HUD Reading : ${stressHudFps}`);
+  console.log(`   - Minimum FPS        : ${stressStats.min.toFixed(1)} FPS`);
+  console.log(`   - Median FPS         : ${stressStats.median.toFixed(1)} FPS`);
+  console.log(`   - 5th Percentile (p5): ${stressStats.p5.toFixed(1)} FPS`);
+  console.log(`   - Average FPS        : ${stressStats.avg.toFixed(1)} FPS`);
   console.log("============================================================\n");
 
   await browser.close();

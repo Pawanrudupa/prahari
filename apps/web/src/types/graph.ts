@@ -13,6 +13,7 @@ export interface AgentNode {
   role: string;
   owner: string;
   status: string;
+  tags?: string[];
   activityCount?: number;
   riskScore?: number;
   pendingEscalations?: number;
@@ -27,6 +28,8 @@ export interface ToolNode {
   name: string;
   server: string;
   sensitivity: string;
+  status?: string;
+  tags?: string[];
   position?: [number, number, number];
 }
 

@@ -3,9 +3,9 @@
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import String, cast, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record_admin_audit_event
@@ -24,6 +24,7 @@ class ToolCreateRequest(BaseModel):
     server: str = Field(..., min_length=1, max_length=255, description="MCP server or provider")
     tool_schema: dict[str, Any] | None = Field(default=None, alias="schema_json")
     sensitivity: str | None = Field(default="normal", max_length=50)
+    tags: list[str] = Field(default_factory=list)
 
 
 class ToolResponse(BaseModel):
@@ -34,6 +35,8 @@ class ToolResponse(BaseModel):
     server: str
     tool_schema: dict[str, Any] | None = Field(default=None, alias="schema_json")
     sensitivity: str | None
+    status: str = "active"
+    tags: list[str] = Field(default_factory=list)
 
 
 class ToolGrantRequest(BaseModel):
@@ -65,6 +68,8 @@ async def create_tool(
         server=req.server,
         schema_json=req.tool_schema,
         sensitivity=req.sensitivity,
+        status="active",
+        tags=req.tags,
     )
     db.add(tool)
     await db.commit()
@@ -78,6 +83,7 @@ async def create_tool(
             "name": tool.name,
             "server": tool.server,
             "sensitivity": tool.sensitivity,
+            "tags": tool.tags,
         },
         tool=tool.name,
     )
@@ -88,6 +94,8 @@ async def create_tool(
         server=tool.server,
         schema_json=tool.schema_json,
         sensitivity=tool.sensitivity,
+        status=tool.status,
+        tags=tool.tags or [],
     )
 
 
@@ -99,8 +107,23 @@ async def create_tool(
 )
 async def list_tools(
     db: Annotated[AsyncSession, Depends(get_db)],
+    include_stress: Annotated[bool, Query(description="Include stress-test tools")] = False,
+    include_archived: Annotated[bool, Query(description="Include archived tools")] = False,
 ) -> list[ToolResponse]:
-    result = await db.execute(select(Tool).order_by(Tool.name.asc()))
+    stmt = select(Tool)
+    if not include_archived:
+        stmt = stmt.where(Tool.status != "archived")
+    if not include_stress:
+        stmt = stmt.where(
+            not_(
+                or_(
+                    Tool.name.startswith("stress."),
+                    cast(Tool.tags, String).contains("stress"),
+                )
+            )
+        )
+    stmt = stmt.order_by(Tool.name.asc())
+    result = await db.execute(stmt)
     tools = list(result.scalars().all())
     return [
         ToolResponse(
@@ -109,6 +132,8 @@ async def list_tools(
             server=t.server,
             schema_json=t.schema_json,
             sensitivity=t.sensitivity,
+            status=t.status,
+            tags=t.tags or [],
         )
         for t in tools
     ]

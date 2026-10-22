@@ -166,7 +166,7 @@ class SimulationRunner:
             elif name not in self.agent_keys:
                 resp = await client.post(
                     f"{self.api_url}/v1/agents",
-                    json={"name": name, "owner": "Stress Team", "role": "support"},
+                    json={"name": name, "owner": "Stress Team", "role": "support", "tags": ["stress"]},
                     headers=admin_headers,
                 )
                 if resp.status_code in (200, 201):
@@ -187,7 +187,7 @@ class SimulationRunner:
             elif name not in self.tool_ids:
                 resp = await client.post(
                     f"{self.api_url}/v1/tools",
-                    json={"name": name, "server": "stress-server", "sensitivity": "normal"},
+                    json={"name": name, "server": "stress-server", "sensitivity": "normal", "tags": ["stress"]},
                     headers=admin_headers,
                 )
                 if resp.status_code in (200, 201):
@@ -198,6 +198,7 @@ class SimulationRunner:
         client: httpx.AsyncClient,
         call_spec: dict[str, Any],
         session_id: str,
+        parent_action_id: str | None = None,
     ) -> dict[str, Any]:
         """Dispatch a single tool call to the gateway and log decision."""
         agent_name = call_spec["agent"]
@@ -205,7 +206,7 @@ class SimulationRunner:
         if not api_key:
             return {"error": f"Agent {agent_name} not provisioned"}
 
-        req_body = {
+        req_body: dict[str, Any] = {
             "agent_key": api_key,
             "session_id": session_id,
             "tool": call_spec["tool"],
@@ -213,6 +214,8 @@ class SimulationRunner:
             "purpose": call_spec.get("purpose", ""),
             "context": call_spec.get("context", {}),
         }
+        if parent_action_id:
+            req_body["parent_action_id"] = parent_action_id
 
         # Advance virtual clock deterministically
         self.clock.tick()
@@ -229,6 +232,7 @@ class SimulationRunner:
             "decision": data.get("decision", "unknown"),
             "rule_id": data.get("rule_id"),
             "reason": data.get("reason"),
+            "action_id": data.get("action_id"),
         }
         self.decisions_log.append(record)
         return record
@@ -265,9 +269,25 @@ class SimulationRunner:
 
         calls = build_scenario_calls(scenario=scenario, count=count, seed=self.seed)
         session_id = str(uuid4())
+        last_action_id: str | None = None
+        actions_in_session = 0
 
         for call in calls:
-            await self.execute_call(client, call, session_id)
+            # Group calls into multi-step goal sessions of 4-6 actions each
+            if actions_in_session >= 5:
+                session_id = str(uuid4())
+                last_action_id = None
+                actions_in_session = 0
+
+            res = await self.execute_call(
+                client=client,
+                call_spec=call,
+                session_id=session_id,
+                parent_action_id=last_action_id,
+            )
+            last_action_id = res.get("action_id")
+            actions_in_session += 1
+
             if self.rate > 0:
                 delay = 1.0 / self.rate
                 await asyncio.sleep(min(delay, 0.05))

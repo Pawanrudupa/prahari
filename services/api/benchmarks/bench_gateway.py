@@ -120,18 +120,18 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
         await _ensure_postgres_db_exists(db_url)
         safe_url = db_url.split("@")[-1] if "@" in db_url else db_url
         print(f"Running benchmark against real PostgreSQL: {safe_url}")
+        init_engine = create_async_engine(db_url, isolation_level="AUTOCOMMIT")
+        async with init_engine.connect() as conn:
+            with contextlib.suppress(Exception):
+                await conn.execute(text("DROP SCHEMA public CASCADE"))
+                await conn.execute(text("CREATE SCHEMA public"))
+                await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await init_engine.dispose()
+
         engine = create_async_engine(db_url, echo=False)
         async with engine.begin() as conn:
-            with contextlib.suppress(Exception):
-                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await conn.run_sync(Base.metadata.create_all)
-            # Isolate benchmark data from any prior test data
-            await conn.execute(
-                text(
-                    "TRUNCATE TABLE agent_tool_grants, agents, tools, "
-                    "audit_log, audit_checkpoints CASCADE"
-                )
-            )
 
     else:
         print("Running benchmark against in-memory SQLite fallback")

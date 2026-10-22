@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import String, cast, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record_admin_audit_event
@@ -25,6 +25,7 @@ class AgentCreateRequest(BaseModel):
     name: str = Field(..., max_length=255)
     owner: str = Field(..., max_length=255)
     role: str | None = Field(default=None, max_length=50)
+    tags: list[str] = Field(default_factory=list)
 
 
 class AgentStatusUpdateRequest(BaseModel):
@@ -38,6 +39,7 @@ class AgentCreateResponse(BaseModel):
     role: str | None
     api_key: str = Field(..., description="Shown only once at creation time")
     status: str
+    tags: list[str] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -53,6 +55,7 @@ class AgentResponse(BaseModel):
     owner: str
     role: str | None
     status: str
+    tags: list[str] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -98,6 +101,7 @@ async def create_agent(
         api_key_prefix=key_info.prefix,
         api_key_hash=key_info.hashed,
         status="active",
+        tags=req.tags,
     )
     db.add(agent)
     await db.commit()
@@ -113,6 +117,7 @@ async def create_agent(
             "role": agent.role,
             "owner": agent.owner,
             "key_prefix": key_info.prefix,
+            "tags": agent.tags,
         },
         agent_id=agent.id,
     )
@@ -124,6 +129,7 @@ async def create_agent(
         role=agent.role,
         api_key=key_info.full_key,
         status=agent.status,
+        tags=agent.tags or [],
         created_at=agent.created_at,
     )
 
@@ -135,8 +141,22 @@ async def create_agent(
 )
 async def list_agents(
     db: Annotated[AsyncSession, Depends(get_db)],
+    include_stress: Annotated[bool, Query(description="Include stress-test nodes")] = False,
+    include_archived: Annotated[bool, Query(description="Include archived agents")] = False,
 ) -> list[AgentResponse]:
-    stmt = select(Agent).order_by(Agent.created_at.desc())
+    stmt = select(Agent)
+    if not include_archived:
+        stmt = stmt.where(Agent.status != "archived")
+    if not include_stress:
+        stmt = stmt.where(
+            not_(
+                or_(
+                    Agent.name.startswith("Stress-"),
+                    cast(Agent.tags, String).contains("stress"),
+                )
+            )
+        )
+    stmt = stmt.order_by(Agent.created_at.desc())
     result = await db.execute(stmt)
     agents = result.scalars().all()
     return [
@@ -146,6 +166,7 @@ async def list_agents(
             owner=a.owner,
             role=a.role,
             status=a.status,
+            tags=a.tags or [],
             created_at=a.created_at,
         )
         for a in agents
@@ -193,6 +214,7 @@ async def update_agent_status(
         owner=agent.owner,
         role=agent.role,
         status=agent.status,
+        tags=agent.tags or [],
         created_at=agent.created_at,
     )
 
@@ -279,14 +301,16 @@ async def get_agent_activity(
     buckets: list[dict[str, Any]] = []
     for i in range(num_buckets):
         b_time = start_time + (i * bucket_duration)
-        buckets.append({
-            "timestamp": b_time.isoformat(),
-            "count": 0,
-            "allow": 0,
-            "redact": 0,
-            "escalate": 0,
-            "deny": 0,
-        })
+        buckets.append(
+            {
+                "timestamp": b_time.isoformat(),
+                "count": 0,
+                "allow": 0,
+                "redact": 0,
+                "escalate": 0,
+                "deny": 0,
+            }
+        )
 
     agent_id_str = str(agent_id)
     for row in rows:
@@ -318,4 +342,3 @@ async def get_agent_activity(
         window=window,
         points=[AgentActivityPoint(**b) for b in buckets],
     )
-

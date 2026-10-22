@@ -1,8 +1,8 @@
 # 05 — API and Data Model
 
 ## Tables (PostgreSQL)
-- `agents(id, name, owner, role, api_key_prefix, api_key_hash, status, created_at)`
-- `tools(id, name, server, schema_json, sensitivity, created_at)`
+- `agents(id, name, owner, role, api_key_prefix, api_key_hash, status, tags text[], created_at)`
+- `tools(id, name, server, schema_json, sensitivity, tags text[], created_at)`
 - `agent_tool_grants(agent_id, tool_id)`
 - `policies(id, name, status, active_version_id)`
 - `policy_versions(id, policy_id, version, yaml, created_by, created_at)`
@@ -11,7 +11,7 @@
 - `sessions(id, agent_id, goal, started_at, ended_at)`
 - `actions(id, session_id, seq, tool_id, args_json, purpose, data_classes text[], parent_action_id, created_at)`  # parent gives the workflow DAG
 - `decisions(id, action_id, outcome, rule_id, policy_version_id, reason, risk_score, injection_score, latency_ms, created_at)`
-- `approvals(id, decision_id, status, approver, decided_at, note)`
+- `approvals(id, decision_id, status, approver, decided_at, note, approval_token, approval_token_expires_at, consumed_at)`
 - `incidents(id, session_id, kind, severity, opened_at, closed_at)`
 - `audit_log(id, seq, prev_hash, hash, payload_json, created_at)`
 - `audit_checkpoints(id, seq, head_hash, signature, created_at)`
@@ -52,26 +52,28 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `POST /v1/auth/login` body `{admin_token}` -> `{session_token, token_type, expires_in, mode}` (exchanges admin secret for browser session token; admin secret is never exposed in browser)
 - `GET /v1/auth/dev-session` -> `{session_token, mode: "development-bypass"}` (development-only bypass, rejected in production with HTTP 404)
 - `POST /v1/auth/ws-ticket` (admin or session auth) -> `{ticket, expires_in}` (mints a single-use, 30-second ticket for WebSocket connection; prevents token exposure in URLs and access logs)
-- `POST /v1/gateway/tool-call` body `{agent_key, session_id, tool, args, purpose?, context?{user_prompt, tool_outputs[]}}` -> `{decision, rule_id, reason, redacted_args?, approval_id?, decision_id, data_classes}`
-- `GET/POST /v1/agents` (admin only; returns HTTP 409 Conflict if name already exists; writes audit event on creation)
+- `POST /v1/gateway/tool-call` body `{agent_key, session_id, tool, args, purpose?, context?{user_prompt, tool_outputs[]}, parent_action_id?, approval_token?}` (or `X-Approval-Token` header) -> `{decision, rule_id, reason, redacted_args?, approval_id?, decision_id, data_classes}` (validates single-use approval token bound to args hash & agent)
+- `GET/POST /v1/agents` (admin only; returns HTTP 409 Conflict if name already exists; supports `tags`; writes audit event on creation)
 - `PATCH /v1/agents/{id}` body `{status: "active"|"disabled"}` (admin only) -> `{id, name, owner, role, status, created_at}` (enables or disables an agent; writes `agent.status_updated` audit event)
 - `POST /v1/agents/{id}/rotate-key` (admin only) -> `{id, name, api_key}` (rotates agent credentials idempotently; writes `agent.key_rotated` audit event)
 - `GET /v1/agents/{id}/activity?window=1h|24h|7d` (admin/session) -> `{agent_id, window, points: [{timestamp, count, allow, redact, escalate, deny}]}` (timeseries activity sparkline)
-- `GET /v1/tools` (admin/session), `POST /v1/tools` (admin only; writes `tool.created` audit event)
+- `GET /v1/tools` (admin/session; supports `tags`), `POST /v1/tools` (admin only; writes `tool.created` audit event)
 - `POST /v1/agents/{id}/grants` (admin only; writes `agent.grant_added` audit event), `DELETE /v1/agents/{id}/grants/{tool_id}` (admin only; writes `agent.grant_revoked` audit event), `GET /v1/agents/{id}/grants` (admin/session)
 - `GET /v1/decisions?cursor=&limit=&outcome=&agent=&tool=&rule_id=&from_time=&to_time=` (admin/session) -> `{items, next_cursor, has_more, total_count}` (cursor-paginated, multi-filter searchable decisions from hash-chained audit log)
-- `GET /v1/graph/snapshot` -> `{latest_audit_seq, agents, tools, grants, recent_decisions}` (for 3D constellation initial load & subscribe-then-snapshot deduplication)
-- `GET/POST /v1/policies`, `POST /v1/policies/{id}/versions`, `POST /v1/policies/{id}/activate`, `POST /v1/policies/{id}/test`
+- `GET /v1/graph/snapshot` -> `{latest_audit_seq, agents, tools, grants, recent_decisions}` (for 3D constellation initial load & subscribe-then-snapshot deduplication; excludes stress nodes by default)
+- `GET/POST /v1/policies`, `POST /v1/policies/validate` (dry-run YAML syntax/schema check), `POST /v1/policies/test` (sample inputs against policy rules), `POST /v1/policies/{id}/versions`, `POST /v1/policies/{id}/activate`, `POST /v1/policies/{id}/rollback` (one-click rollback to prior version; audited)
 - `POST /v1/policies/author` body `{instruction}` -> draft YAML + generated test cases
 - `POST /v1/documents` (upload policy doc), `GET /v1/documents`
 - `GET /v1/decisions/{id}/explain` -> `{summary, clauses:[{doc,chunk,score}], rule_id}`
-- `GET /v1/sessions/{id}/graph` -> DAG nodes/edges for the 3D workflow view
-- `GET /v1/approvals?status=pending`, `POST /v1/approvals/{id}/decide`
+- `GET /v1/sessions` (list sessions with goal, agent, timestamps, action counts) and `GET /v1/sessions/{id}/graph` -> DAG nodes/edges with causal parent-child actions for the 3D workflow view
+- `GET /v1/approvals?status=pending|approved|denied|expired` (approver/admin), `GET /v1/approvals/{id}` (approver/admin), `POST /v1/approvals/{id}/decide` body `{decision: "approve"|"deny", note?: string}` -> `{id, decision_id, status, approver, decided_at, note, approval_token, approval_token_expires_at}` (mints single-use 5-min token; audited)
+- `GET /v1/gateway/approvals/{id}` (agent polling endpoint; returns `{id, status, approval_token}`)
 - `POST /v1/replay` body `{policy_version_id|yaml, from, to}` -> diff of outcomes
 - `POST /v1/redteam/run` body `{scenarios[]}`, `GET /v1/redteam/coverage`
 - `GET /v1/audit/verify` (admin only), `POST /v1/audit/checkpoint` (admin only)
 - `GET /v1/reports/dpdp?from=&to=`
 - `POST /v1/incidents/{id}/circuit-break`
+- `POST /v1/dev/archive-stress` (admin/dev only; sets `status='archived'` on stress-tagged agents/tools; zero audit deletion)
 - `POST /v1/dev/simulate` body `{scenario: string, count: int, seed: int, stress?: bool}` -> `{scenario, count, seed, summary: {allow, redact, escalate, deny}, decisions}` (development and test environments only; returns HTTP 404 in production; concurrency guarded via Redis distributed lock with 120s TTL auto-expiry returning HTTP 409 Conflict if already running)
 
 ## WebSocket `/ws/events`

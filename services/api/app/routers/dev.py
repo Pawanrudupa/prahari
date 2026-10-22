@@ -4,14 +4,21 @@ import asyncio
 import contextlib
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import String, cast, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.service import record_admin_audit_event
+from app.auth.admin import require_admin_token
 from app.core.config import settings
+from app.core.database import get_db
 from app.core.redis import redis_client
+from app.models.agent import Agent
+from app.models.tool import Tool
 
 # Ensure repository root is on sys.path for services.simulator import
 repo_root = str(Path(__file__).resolve().parents[4])
@@ -165,4 +172,73 @@ async def dev_simulate(request: Request, body: DevSimulateRequest) -> DevSimulat
         seed=body.seed,
         summary=summary,
         decisions=decisions,
+    )
+
+
+class ArchiveStressResponse(BaseModel):
+    archived_agents: int
+    archived_tools: int
+    message: str
+
+
+@router.post(
+    "/archive-stress",
+    response_model=ArchiveStressResponse,
+    summary="Archive all stress test agents and tools (Dev only, Admin protected)",
+    dependencies=[Depends(require_admin_token)],
+)
+async def dev_archive_stress(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ArchiveStressResponse:
+    """
+    Dev-only endpoint to archive stress agents and tools (status='archived').
+    Strict invariant: Never deletes audit rows or decision history.
+    """
+    if settings.ENV not in ("development", "test"):
+        raise HTTPException(status_code=404, detail="Endpoint not found")
+
+    # 1. Query all stress agents (either tagged with 'stress' or named starting with 'Stress-')
+    agents_res = await db.execute(
+        select(Agent).where(
+            or_(
+                Agent.name.startswith("Stress-"),
+                cast(Agent.tags, String).contains("stress"),
+            ),
+            Agent.status != "archived",
+        )
+    )
+    agents = list(agents_res.scalars().all())
+    for a in agents:
+        a.status = "archived"
+
+    # 2. Query all stress tools (either tagged with 'stress' or named starting with 'stress.')
+    tools_res = await db.execute(
+        select(Tool).where(
+            or_(
+                Tool.name.startswith("stress."),
+                cast(Tool.tags, String).contains("stress"),
+            ),
+            Tool.status != "archived",
+        )
+    )
+    tools = list(tools_res.scalars().all())
+    for t in tools:
+        t.status = "archived"
+
+    await db.commit()
+
+    # Append admin audit log
+    await record_admin_audit_event(
+        session=db,
+        event_type="stress.archived",
+        details={
+            "archived_agents_count": len(agents),
+            "archived_tools_count": len(tools),
+        },
+    )
+
+    return ArchiveStressResponse(
+        archived_agents=len(agents),
+        archived_tools=len(tools),
+        message=f"Successfully archived {len(agents)} stress agents and {len(tools)} stress tools.",
     )

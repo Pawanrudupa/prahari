@@ -14,3 +14,9 @@ class Tool(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     server: Mapped[str] = mapped_column(String(255), nullable=False)
     schema_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     sensitivity: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active"
+    )
+    tags: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )

@@ -58,11 +58,21 @@ export function SettingsPage() {
     navigate("/login", { replace: true });
   };
 
-  const handleCopyTokenDigest = () => {
+  const handleCopyTokenDigest = async () => {
     if (!sessionToken) return;
-    navigator.clipboard.writeText(sessionToken);
-    setCopiedSession(true);
-    setTimeout(() => setCopiedSession(false), 2000);
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(sessionToken);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+      await navigator.clipboard.writeText(`sha256:${hashHex.slice(0, 16)}...`);
+      setCopiedSession(true);
+      setTimeout(() => setCopiedSession(false), 2000);
+    } catch {
+      // Fallback
+      setCopiedSession(false);
+    }
   };
 
   return (
@@ -223,7 +233,7 @@ export function SettingsPage() {
                 disabled={!sessionToken}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/40 border border-white/10 hover:border-cyan-500/30 text-xs font-mono text-slate-300 hover:text-cyan-300 transition cursor-pointer disabled:opacity-40"
               >
-                {copiedSession ? "Copied to Clipboard!" : "Copy Session Token"}
+                {copiedSession ? "Copied Digest!" : "Copy Dev Session Digest"}
               </button>
             </div>
 

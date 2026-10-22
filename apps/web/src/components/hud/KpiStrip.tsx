@@ -9,10 +9,21 @@ import {
 } from "lucide-react";
 import { useGraphStore } from "../../stores/useGraphStore";
 
+export function computeP95Latency(latencies: number[], minSamples = 5): string {
+  if (latencies.length < minSamples) {
+    return "—";
+  }
+  const sorted = [...latencies].sort((a, b) => a - b);
+  const p95Idx = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
+  return `${(sorted[p95Idx] ?? 0).toFixed(1)}ms`;
+}
+
 export function KpiStrip() {
   const decisions = useGraphStore((s) => s.decisions);
   const pendingEscalations = useGraphStore((s) => s.pendingEscalations);
   const latestAuditSeq = useGraphStore((s) => s.latestAuditSeq);
+  const showStressNodes = useGraphStore((s) => s.showStressNodes);
+  const agents = useGraphStore((s) => s.agents);
 
   const stats = useMemo(() => {
     let allow = 0;
@@ -25,12 +36,23 @@ export function KpiStrip() {
     let lastMinuteCount = 0;
 
     for (const d of decisions) {
+      if (!showStressNodes) {
+        const agent = agents.get(d.agent_id);
+        const isStress =
+          d.agent_name?.startsWith("Stress-") ||
+          d.agent_id.startsWith("Stress-") ||
+          agent?.tags?.includes("stress");
+        if (isStress) continue;
+      }
+
       if (d.outcome === "allow") allow++;
       else if (d.outcome === "redact") redact++;
       else if (d.outcome === "escalate") escalate++;
       else if (d.outcome === "deny") deny++;
 
-      if (d.latency_ms !== undefined) latencies.push(d.latency_ms);
+      if (typeof d.latency_ms === "number" && d.latency_ms > 0) {
+        latencies.push(d.latency_ms);
+      }
 
       if (d.timestamp) {
         const timeDiff = now - new Date(d.timestamp).getTime();
@@ -38,9 +60,7 @@ export function KpiStrip() {
       }
     }
 
-    latencies.sort((a, b) => a - b);
-    const p95Idx = Math.floor(latencies.length * 0.95);
-    const p95 = latencies.length > 0 ? (latencies[p95Idx] ?? 23).toFixed(1) : "23.0";
+    const p95 = computeP95Latency(latencies, 5);
 
     let totalPending = 0;
     for (const count of pendingEscalations.values()) {
@@ -56,7 +76,7 @@ export function KpiStrip() {
       totalPending,
       decisionsPerMin: lastMinuteCount || (decisions.length > 0 ? Math.min(decisions.length * 2, 45) : 0),
     };
-  }, [decisions, pendingEscalations]);
+  }, [decisions, pendingEscalations, showStressNodes, agents]);
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs font-mono select-none">
@@ -93,7 +113,7 @@ export function KpiStrip() {
       {/* p95 Latency */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 bg-slate-900/80 backdrop-blur-md">
         <span className="text-slate-400">p95:</span>
-        <span className="font-semibold text-cyan-300">{stats.p95} ms</span>
+        <span className="font-semibold text-cyan-300">{stats.p95}</span>
       </div>
 
       {/* Pending Approvals */}

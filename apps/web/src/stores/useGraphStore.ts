@@ -22,6 +22,7 @@ interface GraphState {
   pendingEscalations: Map<string, number>;
   liveEventListener: ((event: DecisionEvent) => void) | null;
   cameraPreset: "overview" | "follow_agent" | "top_down";
+  showStressNodes: boolean;
 
   applySnapshot: (snapshot: GraphSnapshot) => void;
   applyEvent: (event: DecisionEvent) => boolean;
@@ -30,6 +31,8 @@ interface GraphState {
   hoverNode: (id: string | null) => void;
   setWebglLost: (lost: boolean) => void;
   setCameraPreset: (preset: "overview" | "follow_agent" | "top_down") => void;
+  setShowStressNodes: (show: boolean) => void;
+  toggleShowStressNodes: () => void;
   resolveEscalation: (agentId: string) => void;
   clearEscalations: () => void;
   setLiveEventListener: (fn: ((event: DecisionEvent) => void) | null) => void;
@@ -49,6 +52,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   pendingEscalations: new Map(),
   liveEventListener: null,
   cameraPreset: "overview",
+  showStressNodes: false,
 
   applySnapshot: (snapshot: GraphSnapshot) => {
     const agentsMap = new Map<string, AgentNode>();
@@ -219,6 +223,14 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
   setCameraPreset: (preset: "overview" | "follow_agent" | "top_down") => {
     set({ cameraPreset: preset });
+  },
+
+  setShowStressNodes: (show: boolean) => {
+    set({ showStressNodes: show });
+  },
+
+  toggleShowStressNodes: () => {
+    set({ showStressNodes: !get().showStressNodes });
   },
 
   resolveEscalation: (agentId: string) => {

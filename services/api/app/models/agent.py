@@ -1,6 +1,7 @@
 import uuid
 
 from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -15,6 +16,9 @@ class Agent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     api_key_prefix: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     api_key_hash: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    tags: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
 
 class AgentToolGrant(Base):

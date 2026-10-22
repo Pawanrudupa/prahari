@@ -159,12 +159,16 @@ export function AgentNodesMesh({ agentPositions }: AgentNodesMeshProps) {
         args={[badgeGeo, badgeMat, count]}
       />
 
-      {/* SDF Billboard Labels above nodes */}
+      {/* SDF Billboard Labels above nodes (decluttered when node count is high) */}
       {agentList.map((agent) => {
         const pos = agentPositions.get(agent.id);
         if (!pos) return null;
         const isSelected = selectedNodeId === agent.id;
         const isHovered = hoveredNodeId === agent.id;
+        // In dense/stress scenes (> 15 nodes), only show label on hover/selection to avoid overlap collision
+        if (count > 15 && !isSelected && !isHovered) {
+          return null;
+        }
         return (
           <group key={agent.id} position={[pos[0], pos[1] + 0.85, pos[2]]}>
             <Billboard>

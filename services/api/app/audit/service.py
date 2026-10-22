@@ -78,7 +78,8 @@ async def record_admin_audit_event(
     In accordance with AGENTS.md invariant: NO raw secrets or API keys are logged.
     """
     safe_details = {
-        k: v for k, v in details.items()
+        k: v
+        for k, v in details.items()
         if "secret" not in k.lower() and (k == "key_prefix" or "key" not in k.lower())
     }
     payload = {
@@ -95,7 +96,6 @@ async def record_admin_audit_event(
         "timestamp": datetime.now(UTC).isoformat(),
     }
     return await append_audit_log(session, payload)
-
 
 
 async def append_audit_log(session: AsyncSession, payload: dict[str, Any]) -> AuditLog:

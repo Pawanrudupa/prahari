@@ -1,8 +1,9 @@
 """Admin and web session authentication dependencies."""
 
 import hmac
+from typing import Annotated
 
-from fastapi import Header, HTTPException, Query, status
+from fastapi import Depends, Header, HTTPException, Query, status
 
 from app.auth.session import verify_session_token
 from app.core.config import settings
@@ -91,3 +92,19 @@ async def require_session_or_admin_token(
         detail="Unauthorized: invalid or expired session/admin token",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def require_approver_or_admin(
+    identity: Annotated[dict[str, str], Depends(require_session_or_admin_token)],
+) -> dict[str, str]:
+    """
+    Enforces that the user has either 'admin' or 'approver' role.
+    Raises HTTP 403 Forbidden if user is only a viewer or unprivileged operator.
+    """
+    role = identity.get("role")
+    if role not in ("admin", "approver"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: requires approver or admin role",
+        )
+    return identity

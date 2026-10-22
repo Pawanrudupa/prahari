@@ -23,22 +23,60 @@ const OUTCOME_ICONS: Record<DecisionOutcome, React.ReactNode> = {
   deny: <ShieldX className="w-3 h-3 text-rose-400" />,
 };
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function resolveAgentDisplayName(
+  event: { agent_name?: string | null; agent_id: string },
+  agents: Map<string, { name: string; tags?: string[] }>
+): string {
+  // 1. If agent_name exists and is NOT a raw UUID, use it directly
+  if (event.agent_name && !UUID_REGEX.test(event.agent_name)) {
+    return event.agent_name;
+  }
+  // 2. Lookup in agents map by agent_id
+  const direct = agents.get(event.agent_id);
+  if (direct?.name) {
+    return direct.name;
+  }
+  // 3. Fallback scan in case agent_id was stored as name or prefixed
+  for (const [id, a] of agents.entries()) {
+    if (id === event.agent_id || a.name === event.agent_id) {
+      return a.name;
+    }
+  }
+  // 4. Default to canonical fallback label, NEVER a truncated UUID
+  return "Autonomous Agent";
+}
+
 export function LiveEventFeed() {
   const [isOpen, setIsOpen] = useState(true);
   const [filter, setFilter] = useState<FilterTab>("all");
   const parentRef = useRef<HTMLDivElement>(null);
 
   const decisions = useGraphStore((s) => s.decisions);
+  const agents = useGraphStore((s) => s.agents);
+  const showStressNodes = useGraphStore((s) => s.showStressNodes);
   const selectedDecisionId = useGraphStore((s) => s.selectedDecisionId);
   const selectDecision = useGraphStore((s) => s.selectDecision);
   const selectNode = useGraphStore((s) => s.selectNode);
 
   // Newest events at top
   const filteredEvents = useMemo(() => {
-    const list = [...decisions].reverse();
+    const list = [...decisions].reverse().filter((d) => {
+      if (!showStressNodes) {
+        const agent = agents.get(d.agent_id);
+        const isStress =
+          d.agent_name?.startsWith("Stress-") ||
+          d.agent_id.startsWith("Stress-") ||
+          agent?.tags?.includes("stress");
+        if (isStress) return false;
+      }
+      return true;
+    });
+
     if (filter === "all") return list;
     return list.filter((d) => d.outcome === filter);
-  }, [decisions, filter]);
+  }, [decisions, filter, showStressNodes, agents]);
 
   const rowVirtualizer = useVirtualizer({
     count: filteredEvents.length,
@@ -141,7 +179,7 @@ export function LiveEventFeed() {
                             {OUTCOME_ICONS[event.outcome]}
                           </span>
                           <span className="font-semibold text-slate-100 truncate text-[11px]">
-                            {event.agent_name || event.agent_id}
+                            {resolveAgentDisplayName(event, agents)}
                           </span>
                           <span className="text-[10px] text-slate-500">→</span>
                           <span className="text-slate-300 truncate text-[11px]">

@@ -1,10 +1,14 @@
 import contextlib
+import hashlib
+import json
+import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import append_audit_log, build_audit_payload
@@ -13,13 +17,17 @@ from app.events.bus import publish_event
 from app.gateway.schemas import ToolCallRequest, ToolCallResponse
 from app.limits.service import check_limits
 from app.models.agent import Agent, AgentToolGrant
+from app.models.decision import Approval, Decision
 from app.models.policy import Policy, PolicyVersion
+from app.models.session import Action, Session
 from app.models.tool import Tool
 from app.policy.engine import evaluate_policy
 from app.policy.loader import load_policy_from_file, load_policy_from_yaml
 from app.policy.schemas import EvaluationContext, PolicyDefinition
 from app.stubs.injection import scan_injection
 from app.stubs.pii import detect_pii, redact_args
+
+logger = logging.getLogger(__name__)
 
 # Fallback default policy loaded from example
 _DEFAULT_POLICY_PATH = (
@@ -63,6 +71,53 @@ async def get_active_policy(session: AsyncSession) -> PolicyDefinition:
     except Exception:
         pass
     return get_fallback_policy()
+
+
+async def _deny_with_audit(
+    session: AsyncSession,
+    agent_id: UUID,
+    agent_name: str,
+    decision_id: UUID,
+    req: ToolCallRequest,
+    reason: str,
+    event_type: str = "decision.denied",
+) -> ToolCallResponse:
+    audit_payload = build_audit_payload(
+        agent_id=agent_id,
+        tool=req.tool,
+        args=req.args,
+        data_classes=[],
+        outcome="deny",
+        reason=reason,
+        session_id=req.session_id,
+        event_type=event_type,
+    )
+    audit_entry = await append_audit_log(session, audit_payload)
+    with contextlib.suppress(Exception):
+        await publish_event(
+            "action.decided",
+            {
+                "decision_id": str(decision_id),
+                "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
+                "agent_id": str(agent_id),
+                "agent_name": agent_name,
+                "tool_id": req.tool,
+                "outcome": "deny",
+                "rule_id": None,
+                "risk_score": 0.0,
+                "session_id": str(req.session_id) if req.session_id else None,
+                "parent_action_id": str(req.parent_action_id) if req.parent_action_id else None,
+                "audit_seq": audit_entry.seq,
+                "data_classes": [],
+                "latency_ms": 0.0,
+            },
+        )
+    return ToolCallResponse(
+        decision="deny",
+        rule_id=None,
+        reason=reason,
+        decision_id=decision_id,
+    )
 
 
 async def execute_gateway_pipeline(
@@ -176,6 +231,133 @@ async def execute_gateway_pipeline(
                 decision_id=decision_id,
             )
 
+        # Step 2c: Approval Token Redemption (if retrying an approved escalated call)
+        if req.approval_token:
+            token_hash = hashlib.sha256(req.approval_token.strip().encode()).hexdigest()
+            appr_stmt = select(Approval).where(Approval.token_hash == token_hash)
+            appr_res = await session.execute(appr_stmt)
+            approval = appr_res.scalar_one_or_none()
+
+            req_args_hash = hashlib.sha256(
+                json.dumps(req.args, sort_keys=True).encode()
+            ).hexdigest()
+
+            if not approval:
+                return await _deny_with_audit(
+                    session=session,
+                    agent_id=agent_id,
+                    agent_name=agent.name,
+                    decision_id=decision_id,
+                    req=req,
+                    reason="approval_token_invalid",
+                    event_type="approval.rejected",
+                )
+            if approval.token_consumed:
+                return await _deny_with_audit(
+                    session=session,
+                    agent_id=agent_id,
+                    agent_name=agent.name,
+                    decision_id=decision_id,
+                    req=req,
+                    reason="approval_token_already_consumed",
+                    event_type="approval.rejected",
+                )
+            if approval.status != "approved":
+                return await _deny_with_audit(
+                    session=session,
+                    agent_id=agent_id,
+                    agent_name=agent.name,
+                    decision_id=decision_id,
+                    req=req,
+                    reason=f"approval_status_{approval.status}",
+                    event_type="approval.rejected",
+                )
+            if approval.token_expires_at:
+                expires_at = (
+                    approval.token_expires_at.replace(tzinfo=UTC)
+                    if approval.token_expires_at.tzinfo is None
+                    else approval.token_expires_at
+                )
+                if expires_at < datetime.now(UTC):
+                    approval.status = "expired"
+                    await session.commit()
+                    return await _deny_with_audit(
+                        session=session,
+                        agent_id=agent_id,
+                        agent_name=agent.name,
+                        decision_id=decision_id,
+                        req=req,
+                        reason="approval_token_expired",
+                        event_type="approval.expired",
+                    )
+            if approval.agent_id != agent_id:
+                return await _deny_with_audit(
+                    session=session,
+                    agent_id=agent_id,
+                    agent_name=agent.name,
+                    decision_id=decision_id,
+                    req=req,
+                    reason="approval_agent_mismatch",
+                    event_type="approval.rejected",
+                )
+            if approval.args_hash != req_args_hash:
+                return await _deny_with_audit(
+                    session=session,
+                    agent_id=agent_id,
+                    agent_name=agent.name,
+                    decision_id=decision_id,
+                    req=req,
+                    reason="approval_args_mismatch",
+                    event_type="approval.rejected",
+                )
+
+            # Valid approval token: consume single-use token and allow execution
+            approval.token_consumed = True
+            await session.commit()
+
+            consumed_payload = build_audit_payload(
+                agent_id=agent_id,
+                tool=req.tool,
+                args=req.args,
+                data_classes=[],
+                outcome="allow",
+                rule_id=f"approved:{approval.id}",
+                reason=f"Human approval granted by {approval.approver or 'operator'}",
+                session_id=req.session_id,
+                event_type="approval.consumed",
+            )
+            audit_entry = await append_audit_log(session, consumed_payload)
+
+            with contextlib.suppress(Exception):
+                await publish_event(
+                    "action.decided",
+                    {
+                        "decision_id": str(decision_id),
+                        "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
+                        "agent_id": str(agent_id),
+                        "agent_name": agent.name,
+                        "tool_id": req.tool,
+                        "outcome": "allow",
+                        "rule_id": f"approved:{approval.id}",
+                        "risk_score": 0.0,
+                        "session_id": str(req.session_id) if req.session_id else None,
+                        "parent_action_id": (
+                            str(req.parent_action_id) if req.parent_action_id else None
+                        ),
+                        "audit_seq": audit_entry.seq,
+                        "data_classes": [],
+                        "latency_ms": 0.0,
+                    },
+                )
+
+            return ToolCallResponse(
+                decision="allow",
+                rule_id=f"approved:{approval.id}",
+                reason=f"Human approval granted by {approval.approver or 'operator'}",
+                decision_id=decision_id,
+                data_classes=[],
+            )
+
         # Step 3: Inbound Injection Scan
         injection_score = scan_injection(req.context)
 
@@ -279,6 +461,109 @@ async def execute_gateway_pipeline(
 
         approval_id: UUID | None = uuid4() if outcome == "escalate" else None
 
+        # Step 8b: Persist Relational Session, Action, Decision, and Approval rows
+        action_id = uuid4()
+        tool_obj = (
+            await session.execute(select(Tool).where(Tool.name == req.tool))
+        ).scalar_one_or_none()
+
+        if tool_obj:
+            session_obj = await session.get(Session, req.session_id)
+            if not session_obj:
+                session_obj = Session(
+                    id=req.session_id,
+                    agent_id=agent_id,
+                    goal=req.purpose or f"Execution task workflow for {agent.name}",
+                )
+                session.add(session_obj)
+                await session.flush()
+
+            act_seq = (
+                await session.execute(
+                    select(func.count(Action.id)).where(Action.session_id == req.session_id)
+                )
+            ).scalar() or 0
+
+            action_record = Action(
+                id=action_id,
+                session_id=req.session_id,
+                seq=act_seq + 1,
+                tool_id=tool_obj.id,
+                args_json=redacted_args or req.args,
+                purpose=req.purpose,
+                data_classes=data_classes,
+                parent_action_id=req.parent_action_id,
+            )
+            session.add(action_record)
+            await session.flush()
+
+            decision_record = Decision(
+                id=decision_id,
+                action_id=action_id,
+                outcome=outcome,
+                rule_id=rule_id,
+                reason=reason,
+                risk_score=float(injection_score),
+                injection_score=float(injection_score),
+                latency_ms=0,
+            )
+            session.add(decision_record)
+            await session.flush()
+
+            if outcome == "escalate" and approval_id:
+                args_hash_val = hashlib.sha256(
+                    json.dumps(req.args, sort_keys=True).encode()
+                ).hexdigest()
+                approval_record = Approval(
+                    id=approval_id,
+                    decision_id=decision_id,
+                    agent_id=agent_id,
+                    tool_id=tool_obj.id,
+                    args_hash=args_hash_val,
+                    risk_score=float(injection_score),
+                    rule_id=rule_id,
+                    reason=reason,
+                    status="pending",
+                    token_consumed=False,
+                )
+                session.add(approval_record)
+                await session.flush()
+
+                # Record audit event for approval creation
+                approval_audit = build_audit_payload(
+                    agent_id=agent_id,
+                    tool=req.tool,
+                    args=req.args,
+                    data_classes=data_classes,
+                    outcome="escalate",
+                    rule_id=rule_id,
+                    policy_version=active_policy.version,
+                    reason="approval_requested",
+                    session_id=req.session_id,
+                    event_type="approval.created",
+                )
+                await append_audit_log(session, approval_audit)
+
+                with contextlib.suppress(Exception):
+                    await publish_event(
+                        "approval.created",
+                        {
+                            "approval_id": str(approval_id),
+                            "decision_id": str(decision_id),
+                            "agent_id": str(agent_id),
+                            "agent_name": agent.name,
+                            "tool": req.tool,
+                            "rule_id": rule_id,
+                            "risk_score": float(injection_score),
+                            "reason": reason,
+                            "args_hash": args_hash_val,
+                            "status": "pending",
+                            "created_at": datetime.now(UTC).isoformat(),
+                        },
+                    )
+
+            await session.commit()
+
         return ToolCallResponse(
             decision=outcome,
             rule_id=rule_id,
@@ -286,10 +571,12 @@ async def execute_gateway_pipeline(
             redacted_args=redacted_args,
             approval_id=approval_id,
             decision_id=decision_id,
+            action_id=action_id,
             data_classes=data_classes,
         )
 
-    except Exception:
+    except Exception as exc:
+        logger.exception("Pipeline execution failed closed: %s", exc)
         # FAIL CLOSED: Any unexpected error yields deny with engine_error
         try:
             audit_payload = build_audit_payload(

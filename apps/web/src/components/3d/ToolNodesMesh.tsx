@@ -111,12 +111,15 @@ export function ToolNodesMesh({ toolPositions }: ToolNodesMeshProps) {
         }}
       />
 
-      {/* SDF Billboard Labels above tool nodes */}
+      {/* SDF Billboard Labels above tool nodes (decluttered in dense mode) */}
       {toolList.map((tool) => {
         const pos = toolPositions.get(tool.id);
         if (!pos) return null;
         const isSelected = selectedNodeId === tool.id;
         const isHovered = hoveredNodeId === tool.id;
+        if (count > 15 && !isSelected && !isHovered) {
+          return null;
+        }
         return (
           <group key={tool.id} position={[pos[0], pos[1] + 0.75, pos[2]]}>
             <Billboard>

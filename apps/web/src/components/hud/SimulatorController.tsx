@@ -8,18 +8,52 @@ import {
   ShieldAlert,
   Clock,
   Layers,
+  Archive,
+  Eye,
 } from "lucide-react";
 import { useAuthStore } from "../../stores/useAuthStore";
+import { useGraphStore } from "../../stores/useGraphStore";
 
 export function SimulatorController() {
   const isDevEnv = useAuthStore((s) => s.isDevEnv);
+  const sessionToken = useAuthStore((s) => s.sessionToken);
+
+  const showStressNodes = useGraphStore((s) => s.showStressNodes);
+  const toggleShowStressNodes = useGraphStore((s) => s.toggleShowStressNodes);
+
   const [isRunning, setIsRunning] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [lastSummary, setLastSummary] = useState<string | null>(null);
 
   // Show only in dev mode
   if (!import.meta.env.DEV && !isDevEnv) {
     return null;
   }
+
+  const archiveStressNodes = async () => {
+    if (isArchiving) return;
+    setIsArchiving(true);
+    try {
+      const token = sessionToken;
+      const resp = await fetch("/v1/dev/archive-stress", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setLastSummary(`Archived ${data.archived_agents} agents & ${data.archived_tools} tools`);
+      } else {
+        setLastSummary(`Archive failed: HTTP ${resp.status}`);
+      }
+    } catch (err: any) {
+      setLastSummary(`Archive error: ${err.message}`);
+    } finally {
+      setIsArchiving(false);
+    }
+  };
 
   const runScenario = async (scenario: string, count: number = 10) => {
     if (isRunning) return;
@@ -118,6 +152,32 @@ export function SimulatorController() {
       >
         <Layers className="w-3 h-3 text-cyan-400" />
         <span>Run All</span>
+      </button>
+
+      {/* Stress Hygiene Controls */}
+      <span className="h-4 w-[1px] bg-white/10 mx-1" />
+
+      <button
+        onClick={toggleShowStressNodes}
+        className={`px-2 py-1 rounded border text-[11px] transition cursor-pointer flex items-center gap-1 ${
+          showStressNodes
+            ? "bg-amber-500/20 border-amber-500/40 text-amber-300 font-semibold"
+            : "bg-white/[0.04] border-white/10 text-slate-400 hover:text-slate-200 hover:bg-white/[0.08]"
+        }`}
+        title="Toggle visibility of stress-test nodes in constellation & event feeds"
+      >
+        <Eye className="w-3 h-3" />
+        <span>{showStressNodes ? "Stress Nodes: ON" : "Stress Nodes: OFF"}</span>
+      </button>
+
+      <button
+        onClick={archiveStressNodes}
+        disabled={isArchiving || isRunning}
+        className="px-2 py-1 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition disabled:opacity-50 cursor-pointer flex items-center gap-1"
+        title="Archive all stress agents & tools (status=archived). Invariant: Audit rows are never deleted."
+      >
+        <Archive className="w-3 h-3 text-rose-400" />
+        <span>{isArchiving ? "Archiving..." : "Archive Stress"}</span>
       </button>
 
       {isRunning && (

@@ -11,8 +11,15 @@ import {
 } from "lucide-react";
 import { Badge } from "../../../components/ui";
 
+interface Capability {
+  title: string;
+  status: "Active" | "In progress" | "Planned";
+  description: string;
+  icon: React.ReactNode;
+}
+
 export function FeatureGridSection() {
-  const capabilities = [
+  const capabilities: Capability[] = [
     {
       title: "Live 3D Constellation",
       status: "Active" as const,
@@ -33,13 +40,13 @@ export function FeatureGridSection() {
     },
     {
       title: "Human Approvals Queue",
-      status: "In progress" as const,
+      status: "Active" as const,
       description: "Interactive escalation card deck allowing operators to inspect, approve, or deny held actions.",
       icon: <UserCheck className="w-5 h-5 text-purple-400" />,
     },
     {
       title: "Policy Studio & YAML Engine",
-      status: "In progress" as const,
+      status: "Active" as const,
       description: "Declarative policy authoring with version history, dry-run testing, and immediate audit tracking.",
       icon: <FileCode className="w-5 h-5 text-indigo-400" />,
     },

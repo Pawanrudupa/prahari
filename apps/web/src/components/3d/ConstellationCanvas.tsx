@@ -18,9 +18,29 @@ interface ConstellationCanvasProps {
 function SceneContent({ isDegraded, reducedMotion }: ConstellationCanvasProps) {
   const agents = useGraphStore((s) => s.agents);
   const tools = useGraphStore((s) => s.tools);
+  const showStressNodes = useGraphStore((s) => s.showStressNodes);
 
-  const agentsList = useMemo(() => Array.from(agents.values()), [agents]);
-  const toolsList = useMemo(() => Array.from(tools.values()), [tools]);
+  const agentsList = useMemo(() => {
+    const list = Array.from(agents.values());
+    if (showStressNodes) return list;
+    return list.filter(
+      (a) =>
+        !a.tags?.includes("stress") &&
+        !a.name.startsWith("Stress-") &&
+        a.status !== "archived",
+    );
+  }, [agents, showStressNodes]);
+
+  const toolsList = useMemo(() => {
+    const list = Array.from(tools.values());
+    if (showStressNodes) return list;
+    return list.filter(
+      (t) =>
+        !t.tags?.includes("stress") &&
+        !t.name.startsWith("stress.") &&
+        t.status !== "archived",
+    );
+  }, [tools, showStressNodes]);
 
   const layout = useMemo(
     () => computeGraphLayout(agentsList, toolsList),

@@ -13,6 +13,7 @@ import {
   FileText,
 } from "lucide-react";
 import { Tooltip } from "../ui/Tooltip";
+import { useGraphStore } from "../../stores/useGraphStore";
 
 interface NavItem {
   label: string;
@@ -26,13 +27,13 @@ const ACTIVE_NAV_ITEMS: NavItem[] = [
   { label: "Constellation", icon: Orbit, path: "/app/constellation", implemented: true },
   { label: "Agents & Tools", icon: Bot, path: "/app/agents", implemented: true },
   { label: "Decisions & Audit", icon: ScrollText, path: "/app/decisions", implemented: true },
+  { label: "Human Approvals", icon: UserCheck, path: "/app/approvals", implemented: true },
+  { label: "Policy Studio", icon: Scale, path: "/app/policies", implemented: true },
+  { label: "Session DAG", icon: Layers, path: "/app/sessions", implemented: true },
   { label: "Settings", icon: Settings, path: "/app/settings", implemented: true },
 ];
 
 const ROADMAP_NAV_ITEMS: NavItem[] = [
-  { label: "Human Approvals", icon: UserCheck, path: "/app/approvals", implemented: false, roadmapPhase: "UI-2b" },
-  { label: "Policy Studio", icon: Scale, path: "/app/policies", implemented: false, roadmapPhase: "UI-2b" },
-  { label: "Session DAG", icon: Layers, path: "/app/sessions", implemented: false, roadmapPhase: "UI-2b" },
   { label: "Incidents", icon: AlertTriangle, path: "/app/incidents", implemented: false, roadmapPhase: "Roadmap" },
   { label: "Replay", icon: RotateCcw, path: "/app/replay", implemented: false, roadmapPhase: "Roadmap" },
   { label: "Red-team", icon: Swords, path: "/app/redteam", implemented: false, roadmapPhase: "Roadmap" },
@@ -41,6 +42,9 @@ const ROADMAP_NAV_ITEMS: NavItem[] = [
 
 export function LeftRail() {
   const location = useLocation();
+  const pendingEscalations = useGraphStore((s) => s.pendingEscalations);
+
+  const totalPending = Array.from(pendingEscalations.values()).reduce((a, b) => a + b, 0);
 
   return (
     <nav className="flex w-16 flex-col items-center gap-2 border-r border-white/[0.08] bg-slate-950/80 backdrop-blur-xl py-4 z-20 select-none overflow-y-auto">
@@ -57,13 +61,18 @@ export function LeftRail() {
               <Link
                 to={item.path}
                 data-testid={`nav-${item.label.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
-                className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
+                className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
                   isActive
                     ? "text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 shadow-[0_0_15px_rgba(56,189,248,0.25)]"
                     : "text-slate-400 hover:text-slate-100 hover:bg-white/[0.05]"
                 }`}
               >
                 <Icon className="w-5 h-5" />
+                {item.path === "/app/approvals" && totalPending > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-purple-500 text-[9px] font-bold text-white shadow-lg animate-pulse">
+                    {totalPending}
+                  </span>
+                )}
               </Link>
             </Tooltip>
           );
