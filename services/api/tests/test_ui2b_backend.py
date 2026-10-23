@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.session import create_session_token
 from app.models.decision import Approval
-from app.models.policy import Policy
+from app.models.policy import Policy, PolicyVersion
 
 
 @pytest.mark.asyncio
@@ -313,7 +313,7 @@ async def test_policies_validate_and_test_endpoints(
 policy: test-policy
 version: 1
 defaults:
-  decision: allow
+  decision: deny
 rules:
   - id: R-deny-dangerous
     effect: deny
@@ -370,7 +370,7 @@ async def test_policy_activation_and_rollback(
 policy: prod-guard
 version: 1
 defaults:
-  decision: allow
+  decision: deny
 rules: []
 limits: []
 """
@@ -378,7 +378,7 @@ limits: []
 policy: prod-guard
 version: 2
 defaults:
-  decision: allow
+  decision: deny
 rules:
   - id: R2-deny-sensitive
     effect: deny
@@ -417,6 +417,11 @@ limits: []
     rollback_resp = await client.post(f"/v1/policies/{pol.id}/rollback", headers=admin_headers)
     assert rollback_resp.status_code == 200
     assert rollback_resp.json()["version"] == 1
+
+    # Cleanup: Deactivate test policy so default fallback policy remains active for subsequent tests
+    pol.status = "archived"
+    pol.active_version_id = None
+    await db_session.commit()
 
 
 @pytest.mark.asyncio
@@ -531,3 +536,134 @@ async def test_stress_data_hygiene_and_archive(
     post_archive = await client.get("/v1/agents?include_stress=true", headers=admin_headers)
     post_names = [a["name"] for a in post_archive.json()]
     assert "Stress-Agent-999" not in post_names
+
+
+@pytest.mark.asyncio
+async def test_policy_fail_closed_defaults_rejection(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Verify fail-closed invariant: defaults.decision != 'deny' is rejected
+    at validate, save, and activate.
+    """
+    invalid_yaml = """
+policy: fail-open-attempt
+version: 1
+defaults:
+  decision: allow
+rules: []
+limits: []
+"""
+    # 1. Validate endpoint must reject with clear fail-closed error
+    val_resp = await client.post(
+        "/v1/policies/validate", json={"yaml": invalid_yaml}, headers=admin_headers
+    )
+    assert val_resp.status_code == 200
+    val_data = val_resp.json()
+    assert val_data["valid"] is False
+    assert any("defaults.decision must strictly be 'deny'" in err for err in val_data["errors"])
+
+    # 2. Save new version must reject with 400
+    pol = Policy(id=uuid4(), name="Strict Governance Policy", status="draft")
+    db_session.add(pol)
+    await db_session.commit()
+
+    ver_resp = await client.post(
+        f"/v1/policies/{pol.id}/versions",
+        json={"yaml": invalid_yaml, "comment": "Illegal allow default"},
+        headers=admin_headers,
+    )
+    assert ver_resp.status_code == 400
+    assert "defaults.decision must strictly be 'deny'" in ver_resp.json()["detail"]
+
+    # 3. Direct DB insert of a policy with 'allow' default cannot be activated
+    stored_bad_ver = PolicyVersion(
+        id=uuid4(),
+        policy_id=pol.id,
+        version=99,
+        yaml=invalid_yaml,
+        created_by="attacker",
+    )
+    db_session.add(stored_bad_ver)
+    await db_session.commit()
+
+    act_resp = await client.post(
+        f"/v1/policies/{pol.id}/versions/99/activate",
+        headers=admin_headers,
+    )
+    assert act_resp.status_code == 400
+    assert "Activation rejected: target policy failed validation" in act_resp.json()["detail"]
+    assert "defaults.decision must strictly be 'deny'" in act_resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_dev_tamper_audit_and_verification_failure(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """Verify that tampering an audit row breaks the hash chain and verification
+    reports broken_seq.
+    """
+    # Ensure at least one audit record exists by creating an agent
+    await client.post(
+        "/v1/agents",
+        json={"name": "Audit-Tamper-Target", "owner": "Security", "role": "auditor"},
+        headers=admin_headers,
+    )
+
+    # 1. Run audit verify to get baseline
+    verify_resp = await client.get("/v1/audit/verify", headers=admin_headers)
+    assert verify_resp.status_code == 200
+    res = verify_resp.json()
+    assert res["valid"] is True
+    assert res["records_verified"] >= 1
+
+    # 2. Tamper the audit record
+    tamper_resp = await client.post(
+        "/v1/dev/tamper-audit",
+        json={"tamper_type": "hash"},
+        headers=admin_headers,
+    )
+    assert tamper_resp.status_code == 200
+    tampered_data = tamper_resp.json()
+    tampered_seq = tampered_data["tampered_seq"]
+
+    # 3. Verify fails and identifies the broken sequence
+    failed_verify = await client.get("/v1/audit/verify", headers=admin_headers)
+    assert failed_verify.status_code == 200
+    failed_res = failed_verify.json()
+    assert failed_res["valid"] is False
+    assert failed_res["broken_seq"] == tampered_seq
+
+
+@pytest.mark.asyncio
+async def test_admin_events_separated_from_decisions(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """Verify that admin actions do not appear in GET /v1/decisions,
+    but do in /v1/decisions/admin-events.
+    """
+    # 1. Trigger an admin action (e.g. create an agent)
+    create_resp = await client.post(
+        "/v1/agents",
+        json={"name": "Admin-Audited-Bot", "owner": "Security", "role": "auditor"},
+        headers=admin_headers,
+    )
+    assert create_resp.status_code == 201
+
+    # 2. GET /v1/decisions should not list admin_action
+    decisions_resp = await client.get("/v1/decisions", headers=admin_headers)
+    assert decisions_resp.status_code == 200
+    items = decisions_resp.json()["items"]
+    assert not any(item["outcome"] == "admin_action" for item in items)
+
+    # 3. GET /v1/decisions/admin-events should list the admin event
+    admin_events_resp = await client.get("/v1/decisions/admin-events", headers=admin_headers)
+    assert admin_events_resp.status_code == 200
+    admin_items = admin_events_resp.json()["items"]
+    assert len(admin_items) > 0
+    assert any(ev["actor"] == "admin" and ev["operation"] == "agent.created" for ev in admin_items)
+
+

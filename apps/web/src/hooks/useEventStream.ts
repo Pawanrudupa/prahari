@@ -106,6 +106,8 @@ export function useEventStream() {
           isHydratedRef.current = true;
           setDataLoaded(true);
           setIsLoadingSnapshot(false);
+          // Sync pending approvals count from actual pending approvals table
+          useGraphStore.getState().fetchPendingApprovals(sessionToken);
         } catch (snapErr: unknown) {
           const snapMsg = snapErr instanceof Error ? snapErr.message : "Snapshot fetch failed";
           setError(snapMsg);
@@ -137,6 +139,14 @@ export function useEventStream() {
             } else {
               applyEvent(decision);
             }
+          } else if (envelope.type === "approval.created") {
+            useGraphStore.getState().incrementPendingApprovals();
+          } else if (
+            envelope.type === "approval.decided" ||
+            envelope.type === "approval.consumed" ||
+            envelope.type === "approval.expired"
+          ) {
+            useGraphStore.getState().decrementPendingApprovals();
           }
         } catch {
           // Ignore invalid non-JSON frames

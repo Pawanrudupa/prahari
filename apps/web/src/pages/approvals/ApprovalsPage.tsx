@@ -67,6 +67,9 @@ export function ApprovalsPage() {
       const data: ApprovalItem[] = await res.json();
       setApprovals(data);
       setSelectedIndex(0);
+      if (statusFilter === "pending") {
+        useGraphStore.getState().setPendingApprovalsCount(data.length);
+      }
     } catch (err: any) {
       setError({ message: err.message });
     } finally {

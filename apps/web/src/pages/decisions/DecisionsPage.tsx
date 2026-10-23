@@ -54,13 +54,36 @@ interface DecisionsResponse {
   total_count: number | null;
 }
 
+interface AdminEventRecord {
+  id: string;
+  seq: number;
+  prev_hash: string;
+  hash: string;
+  actor: string;
+  operation: string;
+  target: string;
+  details: Record<string, unknown>;
+  timestamp: string;
+  created_at: string;
+  raw_payload: Record<string, unknown>;
+}
+
+interface AdminEventsResponse {
+  items: AdminEventRecord[];
+  next_cursor: number | null;
+  has_more: boolean;
+  total_count: number | null;
+}
+
 interface VerificationResult {
   valid: boolean;
   records_verified: number;
+  total_records?: number;
   head_seq: number;
-  head_hash: string;
+  head_hash: string | null;
   checkpoints_verified: number;
-  errors: string[];
+  broken_seq?: number | null;
+  error?: string | null;
 }
 
 export function DecisionsPage() {
@@ -68,6 +91,9 @@ export function DecisionsPage() {
   const mode = useAuthStore((s) => s.mode);
   const isDev = mode === "development-bypass" || import.meta.env.DEV;
   const errorId = useId();
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState<"decisions" | "admin">("decisions");
 
   // Filters
   const [outcomeFilter, setOutcomeFilter] = useState<string>("all");
@@ -77,8 +103,10 @@ export function DecisionsPage() {
 
   // Drawer & Modal
   const [selectedDecision, setSelectedDecision] = useState<DecisionRecord | null>(null);
+  const [selectedAdminEvent, setSelectedAdminEvent] = useState<AdminEventRecord | null>(null);
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
   const [copiedPayload, setCopiedPayload] = useState(false);
+  const [copiedHeadHash, setCopiedHeadHash] = useState(false);
 
   // Query: Decisions list
   const {
@@ -107,6 +135,25 @@ export function DecisionsPage() {
   });
 
   const decisions = data?.items || [];
+
+  // Query: Admin events list
+  const {
+    data: adminData,
+    isLoading: adminLoading,
+    refetch: refetchAdmin,
+  } = useQuery<AdminEventsResponse>({
+    queryKey: ["admin-events"],
+    queryFn: async () => {
+      const res = await fetch("/v1/decisions/admin-events?limit=100", {
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch admin events");
+      return res.json();
+    },
+    refetchInterval: 8_000,
+  });
+
+  const adminEvents = adminData?.items || [];
 
   // Query: Chain Verification (on demand)
   const {
@@ -190,76 +237,114 @@ export function DecisionsPage() {
             Decisions & Audit Log
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Tamper-evident, hash-chained record of all agent tool execution decisions.
+            Tamper-evident, hash-chained record of all agent tool execution decisions and admin operations.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={() => refetch()} isLoading={isFetching}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (activeTab === "decisions") refetch();
+              else refetchAdmin();
+            }}
+            isLoading={isFetching || adminLoading}
+          >
             <RefreshCw className="w-4 h-4 mr-1.5" />
             Refresh
           </Button>
-          <Button variant="accent" size="sm" onClick={handleOpenVerify}>
+          <Button variant="accent" size="sm" onClick={handleOpenVerify} data-testid="verify-chain-btn">
             <FileCheck2 className="w-4 h-4 mr-1.5" />
             Verify Chain
           </Button>
         </div>
       </div>
 
-      {/* Filter Toolbar */}
-      <Card className="p-4 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          {/* Outcome Filter Pills */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-mono text-slate-400 mr-1">Outcome:</span>
-            {["all", "allow", "redact", "escalate", "deny"].map((out) => (
-              <button
-                key={out}
-                onClick={() => setOutcomeFilter(out)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all border ${
-                  outcomeFilter === out
-                    ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/40 shadow-[0_0_10px_rgba(56,189,248,0.2)]"
-                    : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-white/[0.04]"
-                }`}
-              >
-                {out}
-              </button>
-            ))}
-          </div>
+      {/* View Switcher Tabs */}
+      <div className="flex border-b border-white/[0.08] gap-6">
+        <button
+          onClick={() => setActiveTab("decisions")}
+          className={`pb-3 text-sm font-semibold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+            activeTab === "decisions"
+              ? "border-cyan-400 text-cyan-400"
+              : "border-transparent text-slate-400 hover:text-slate-200"
+          }`}
+          data-testid="tab-tool-decisions"
+        >
+          <History className="w-4 h-4" />
+          Governance Decisions ({decisions.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("admin")}
+          className={`pb-3 text-sm font-semibold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+            activeTab === "admin"
+              ? "border-cyan-400 text-cyan-400"
+              : "border-transparent text-slate-400 hover:text-slate-200"
+          }`}
+          data-testid="tab-admin-events"
+        >
+          <AlertCircle className="w-4 h-4 text-amber-400" />
+          Admin Events ({adminEvents.length})
+        </button>
+      </div>
 
-          {/* Search Inputs */}
-          <div className="flex items-center gap-2 flex-1 max-w-lg justify-end">
-            <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
-              <input
-                type="text"
-                placeholder="Filter by agent..."
-                value={agentFilter}
-                onChange={(e) => setAgentFilter(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-900 border border-white/[0.08] text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-              />
+      {activeTab === "decisions" ? (
+        <>
+          {/* Filter Toolbar */}
+          <Card className="p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              {/* Outcome Filter Pills */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-mono text-slate-400 mr-1">Outcome:</span>
+                {["all", "allow", "redact", "escalate", "deny"].map((out) => (
+                  <button
+                    key={out}
+                    onClick={() => setOutcomeFilter(out)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all border ${
+                      outcomeFilter === out
+                        ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/40 shadow-[0_0_10px_rgba(56,189,248,0.2)]"
+                        : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    {out}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search Inputs */}
+              <div className="flex items-center gap-2 flex-1 max-w-lg justify-end">
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Filter by agent..."
+                    value={agentFilter}
+                    onChange={(e) => setAgentFilter(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-900 border border-white/[0.08] text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Filter tool (e.g. crm)..."
+                    value={toolFilter}
+                    onChange={(e) => setToolFilter(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-white/[0.08] text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                </div>
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Rule ID (e.g. R1)..."
+                    value={ruleFilter}
+                    onChange={(e) => setRuleFilter(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-white/[0.08] text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder="Filter tool (e.g. crm)..."
-                value={toolFilter}
-                onChange={(e) => setToolFilter(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-white/[0.08] text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-              />
-            </div>
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder="Rule ID (e.g. R1)..."
-                value={ruleFilter}
-                onChange={(e) => setRuleFilter(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-white/[0.08] text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-              />
-            </div>
-          </div>
-        </div>
-      </Card>
+          </Card>
 
       {/* Main Decisions View: Virtualized Table or Empty/Error */}
       {isLoading ? (
@@ -378,6 +463,62 @@ export function DecisionsPage() {
           </div>
         </Card>
       )}
+      </>
+      ) : (
+        /* Admin Events View */
+        adminLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-xl" />
+            ))}
+          </div>
+        ) : adminEvents.length === 0 ? (
+          <EmptyState
+            title="No Administrative Events Recorded"
+            description="State changes like agent creation, tool registration, and policy activation will be listed here."
+          />
+        ) : (
+          <Card className="overflow-hidden border-white/[0.08]" data-testid="admin-events-table">
+            <div className="flex items-center px-4 py-3 bg-white/[0.02] border-b border-white/[0.08] text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono">
+              <div className="w-16">Seq</div>
+              <div className="w-24">Actor</div>
+              <div className="w-48">Operation</div>
+              <div className="w-48">Target</div>
+              <div className="flex-1">Details</div>
+              <div className="w-36 text-right">Timestamp</div>
+            </div>
+            <div className="divide-y divide-white/[0.04]">
+              {adminEvents.map((evt) => (
+                <div
+                  key={evt.id}
+                  onClick={() => setSelectedAdminEvent(evt)}
+                  className="flex items-center px-4 py-3 text-xs hover:bg-white/[0.02] cursor-pointer transition-colors"
+                  data-testid={`admin-event-row-${evt.seq}`}
+                >
+                  <div className="w-16 font-mono text-slate-500">#{evt.seq}</div>
+                  <div className="w-24 font-mono">
+                    <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-white/[0.06]">
+                      {evt.actor}
+                    </span>
+                  </div>
+                  <div className="w-48 font-mono text-amber-400 font-medium truncate pr-2">
+                    {evt.operation}
+                  </div>
+                  <div className="w-48 font-mono text-slate-300 truncate pr-2 text-[11px]">
+                    {evt.target}
+                  </div>
+                  <div className="flex-1 text-slate-400 truncate pr-4 text-[11px] font-mono">
+                    {JSON.stringify(evt.details)}
+                  </div>
+                  <div className="w-36 text-right font-mono text-[11px] text-slate-500">
+                    {new Date(evt.created_at).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )
+      )}
 
       {/* Slide-over Detail Drawer */}
       {selectedDecision && (
@@ -489,9 +630,88 @@ export function DecisionsPage() {
         </div>
       )}
 
+      {/* Slide-over Detail Drawer for Admin Events */}
+      {selectedAdminEvent && (
+        <div
+          className="fixed inset-y-0 right-0 w-full max-w-lg bg-slate-950/95 backdrop-blur-2xl border-l border-white/[0.1] shadow-2xl z-50 p-6 flex flex-col justify-between overflow-y-auto"
+          data-testid="admin-event-drawer"
+        >
+          <div className="space-y-6">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="font-mono text-sm text-amber-400">
+                  Admin Event #{selectedAdminEvent.seq}
+                </div>
+                <span className="px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-300 font-mono">
+                  {selectedAdminEvent.operation}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedAdminEvent(null)}
+                className="p-1 rounded-lg hover:bg-white/[0.05] text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                <span className="text-slate-500">Actor:</span>
+                <span className="font-mono text-slate-200">{selectedAdminEvent.actor}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                <span className="text-slate-500">Operation:</span>
+                <span className="font-mono text-amber-400 font-semibold">{selectedAdminEvent.operation}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                <span className="text-slate-500">Target Resource:</span>
+                <span className="font-mono text-slate-300">{selectedAdminEvent.target}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                <span className="text-slate-500">Timestamp:</span>
+                <span className="font-mono text-slate-400">{new Date(selectedAdminEvent.created_at).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-slate-400 font-mono">Event Details:</span>
+              <pre className="p-3 bg-slate-900/80 rounded-xl border border-white/[0.06] text-[11px] font-mono text-slate-300 overflow-x-auto max-h-48">
+                {JSON.stringify(selectedAdminEvent.details, null, 2)}
+              </pre>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">
+                Cryptographic Integrity
+              </h4>
+              <div className="p-3 bg-slate-900/60 rounded-xl border border-white/[0.06] space-y-2 text-[11px] font-mono">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Sequence:</span>
+                  <span className="text-cyan-400">#{selectedAdminEvent.seq}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">RECORD HASH:</span>
+                  <span className="text-slate-400 break-all text-[10px]">{selectedAdminEvent.hash}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">PREVIOUS HASH:</span>
+                  <span className="text-slate-400 break-all text-[10px]">{selectedAdminEvent.prev_hash}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-white/[0.08] flex justify-end">
+            <Button variant="primary" size="sm" onClick={() => setSelectedAdminEvent(null)}>
+              Done
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Dialog: Cryptographic Chain Verification Report */}
       <Dialog open={verifyDialogOpen} onOpenChange={setVerifyDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" data-testid="verify-chain-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileCheck2 className="w-5 h-5 text-cyan-400" />
@@ -509,6 +729,8 @@ export function DecisionsPage() {
           ) : verifyResult ? (
             <div className="space-y-4 py-2 text-xs">
               <div
+                data-testid="verify-result-status"
+                data-status={verifyResult.valid ? "valid" : "invalid"}
                 className={`p-4 rounded-xl border flex items-center gap-3 ${
                   verifyResult.valid
                     ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
@@ -529,30 +751,75 @@ export function DecisionsPage() {
                   <p className="text-[11px] opacity-80 mt-0.5">
                     {verifyResult.valid
                       ? "All hash chains, sequential sequence numbers, and HMAC checkpoints match."
-                      : "Audit sequence is broken or record hash does not match previous head."}
+                      : "Cryptographic hash mismatch or broken linkage detected in database rows."}
                   </p>
                 </div>
               </div>
 
+              {!verifyResult.valid && verifyResult.broken_seq !== undefined && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl space-y-1">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-rose-400/80 font-medium">Tampering Detected At:</span>
+                    <span
+                      className="font-mono font-bold text-rose-300 bg-rose-500/20 px-2 py-0.5 rounded"
+                      data-testid="verify-broken-seq"
+                    >
+                      Sequence #{verifyResult.broken_seq}
+                    </span>
+                  </div>
+                  {verifyResult.error && (
+                    <p className="text-[11px] font-mono text-rose-300/80 mt-1 break-words" data-testid="verify-error-msg">
+                      {verifyResult.error}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="p-3 bg-slate-900/60 rounded-xl border border-white/[0.08] space-y-2 font-mono text-[11px]">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Records Verified:</span>
-                  <span className="text-slate-200 font-semibold">
-                    {verifyResult.records_verified}
+                  <span className="text-slate-200 font-semibold" data-testid="verify-records-count">
+                    {verifyResult.records_verified ?? verifyResult.total_records ?? 0}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Checkpoints Checked:</span>
-                  <span className="text-slate-200">{verifyResult.checkpoints_verified}</span>
+                  <span className="text-slate-200" data-testid="verify-checkpoints-count">
+                    {verifyResult.checkpoints_verified}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Head Sequence:</span>
-                  <span className="text-cyan-400">#{verifyResult.head_seq}</span>
+                  <span className="text-cyan-400" data-testid="verify-head-seq">
+                    #{verifyResult.head_seq}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px]">HEAD HASH:</span>
-                  <span className="text-slate-400 break-all text-[10px]">
-                    {verifyResult.head_hash}
+                  <div className="flex justify-between items-center mb-0.5">
+                    <span className="text-slate-500 text-[10px]">HEAD HASH:</span>
+                    {verifyResult.head_hash && (
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(verifyResult.head_hash || "");
+                          setCopiedHeadHash(true);
+                          setTimeout(() => setCopiedHeadHash(false), 2000);
+                        }}
+                        className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-sans cursor-pointer"
+                        data-testid="copy-head-hash-btn"
+                      >
+                        {copiedHeadHash ? (
+                          <Check className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                        {copiedHeadHash ? "Copied" : "Copy"}
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-slate-400 break-all text-[10px]" data-testid="verify-head-hash">
+                    {verifyResult.head_hash
+                      ? `${verifyResult.head_hash.slice(0, 16)}...${verifyResult.head_hash.slice(-8)}`
+                      : "None"}
                   </span>
                 </div>
               </div>

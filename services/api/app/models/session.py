@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
 
@@ -20,6 +20,10 @@ class Session(UUIDPrimaryKeyMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    actions: Mapped[list["Action"]] = relationship(
+        "Action", back_populates="session", cascade="all, delete-orphan"
+    )
 
 
 class Action(UUIDPrimaryKeyMixin, Base):
@@ -39,3 +43,5 @@ class Action(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    session: Mapped["Session"] = relationship("Session", back_populates="actions")

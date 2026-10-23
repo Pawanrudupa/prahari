@@ -38,7 +38,7 @@ interface PolicyRuleHitCount {
 const DEFAULT_POLICY_YAML = `policy: production-guard
 version: 1
 defaults:
-  decision: allow
+  decision: deny
 rules:
   - id: R1-allow-read-tickets
     effect: allow
@@ -188,6 +188,32 @@ export function PolicyStudioPage() {
   useEffect(() => {
     loadPolicyData();
   }, [loadPolicyData]);
+
+  // 1b. Load specific version YAML into editor
+  const handleLoadVersionYaml = async (versionNumber: number) => {
+    if (!activePolicyId) return;
+    try {
+      const res = await fetch(`/v1/policies/${activePolicyId}/versions/${versionNumber}`, {
+        headers: authHeaders,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setYamlContent(data.yaml);
+        setSelectedVersion(versionNumber);
+        setStatusMessage({
+          type: "success",
+          text: `Loaded YAML for version v${versionNumber}.`,
+        });
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const activeVersion = versions.find((v) => v.is_active);
+  const previousVersion = versions.find((v) =>
+    activeVersion ? v.version < activeVersion.version : false,
+  );
 
   // 2. Validate YAML
   const handleValidate = async () => {
@@ -356,6 +382,7 @@ export function PolicyStudioPage() {
             <button
               onClick={handleValidate}
               disabled={validating}
+              data-testid="policy-validate-btn"
               className="px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-xs text-slate-200 transition cursor-pointer flex items-center gap-1.5"
             >
               <FileCheck className="w-3.5 h-3.5 text-cyan-400" />
@@ -364,6 +391,7 @@ export function PolicyStudioPage() {
 
             <button
               onClick={handleSaveVersion}
+              data-testid="policy-save-version-btn"
               className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-xs text-cyan-200 font-semibold transition cursor-pointer flex items-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5 text-cyan-400" />
@@ -372,11 +400,17 @@ export function PolicyStudioPage() {
 
             <button
               onClick={handleRollback}
-              className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-xs text-amber-200 font-semibold transition cursor-pointer flex items-center gap-1.5"
-              title="Reverts active policy to the immediate prior version"
+              disabled={!previousVersion}
+              data-testid="policy-rollback-btn"
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                previousVersion
+                  ? "bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/30 text-amber-200"
+                  : "bg-white/[0.02] border-white/[0.05] text-slate-500 cursor-not-allowed opacity-50"
+              }`}
+              title={previousVersion ? `Rollback to v${previousVersion.version}` : "No previous version available"}
             >
               <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-              <span>Rollback (v-1)</span>
+              <span>{previousVersion ? `Rollback to v${previousVersion.version}` : "Rollback"}</span>
             </button>
           </div>
         </div>
@@ -438,7 +472,14 @@ export function PolicyStudioPage() {
               <span className="text-[11px] text-slate-500">Dark VS Code Engine (Local Bundle)</span>
             </div>
 
-            <div className="h-[480px] rounded-2xl border border-white/10 overflow-hidden bg-[#1e1e1e] shadow-2xl">
+            <div className="h-[480px] rounded-2xl border border-white/10 overflow-hidden bg-[#1e1e1e] shadow-2xl relative">
+              <textarea
+                data-testid="policy-yaml-textarea"
+                aria-label="YAML Rule Definition Source"
+                className="sr-only"
+                value={yamlContent}
+                onChange={(e) => setYamlContent(e.target.value)}
+              />
               <Editor
                 height="100%"
                 defaultLanguage="yaml"
@@ -494,34 +535,46 @@ export function PolicyStudioPage() {
                 <span className="text-[11px] text-slate-500">{versions.length} versions</span>
               </div>
 
-              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+              <div className="max-h-56 overflow-y-auto space-y-2 pr-1" data-testid="policy-versions-list">
                 {versions.map((v) => (
                   <div
                     key={v.id}
-                    className={`p-2.5 rounded-xl border text-xs transition flex items-center justify-between gap-2 ${
+                    onClick={() => handleLoadVersionYaml(v.version)}
+                    className={`p-2.5 rounded-xl border text-xs transition flex items-center justify-between gap-2 cursor-pointer ${
                       v.is_active
                         ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-200"
                         : "bg-black/30 border-white/[0.06] text-slate-300 hover:border-white/20"
                     }`}
+                    data-testid={`policy-version-row-${v.version}`}
                   >
                     <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-white">v{v.version}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white font-mono">v{v.version}</span>
                         {v.is_active && (
-                          <span className="px-1.5 py-0.2 rounded bg-cyan-400/20 text-cyan-300 text-[9px] uppercase font-bold">
+                          <span
+                            className="px-1.5 py-0.2 rounded bg-cyan-400/20 text-cyan-300 text-[9px] uppercase font-bold tracking-wider"
+                            data-testid={`active-badge-v${v.version}`}
+                          >
                             Active
                           </span>
                         )}
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          by {v.created_by || "admin"}
+                        </span>
                       </div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">
-                        {new Date(v.created_at).toLocaleDateString()}
+                      <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                        {new Date(v.created_at).toLocaleString()}
                       </div>
                     </div>
 
                     {!v.is_active && (
                       <button
-                        onClick={() => handleActivateVersion(v.version)}
-                        className="px-2 py-1 rounded bg-white/[0.08] hover:bg-white/[0.15] text-[10px] font-semibold text-slate-200 transition cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleActivateVersion(v.version);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[10px] font-semibold transition cursor-pointer"
+                        data-testid={`activate-version-${v.version}`}
                       >
                         Activate
                       </button>

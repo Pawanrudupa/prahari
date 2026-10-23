@@ -84,7 +84,7 @@ async def websocket_events_endpoint(
                     # Send server-side heartbeat ping to keep connection alive
                     with contextlib.suppress(Exception):
                         await websocket.send_text(json.dumps({"type": "heartbeat"}))
-        except (WebSocketDisconnect, asyncio.CancelledError):
+        except (WebSocketDisconnect, asyncio.CancelledError, Exception):
             pass
         finally:
             listener_task.cancel()

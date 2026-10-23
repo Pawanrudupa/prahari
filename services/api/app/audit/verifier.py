@@ -17,7 +17,10 @@ class AuditVerificationResult(BaseModel):
     """Result of verifying the integrity of the audit hash chain and signed checkpoints."""
 
     valid: bool
-    total_records: int
+    records_verified: int = 0
+    total_records: int = 0
+    head_seq: int = 0
+    head_hash: str | None = None
     checkpoints_verified: int = 0
     broken_seq: int | None = None
     error: str | None = None
@@ -39,6 +42,8 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
     records = list(result.scalars().all())
 
     total = len(records)
+    head_seq = records[-1].seq if records else 0
+    head_hash = records[-1].hash if records else None
 
     # 2. Fetch all checkpoints
     cp_stmt = select(AuditCheckpoint).order_by(AuditCheckpoint.seq.asc())
@@ -51,7 +56,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
             first_cp = checkpoints[0]
             return AuditVerificationResult(
                 valid=False,
+                records_verified=0,
                 total_records=0,
+                head_seq=0,
+                head_hash=None,
                 checkpoints_verified=0,
                 broken_seq=first_cp.seq,
                 error=(
@@ -59,7 +67,14 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
                     f"{checkpoints[-1].seq} but log is empty"
                 ),
             )
-        return AuditVerificationResult(valid=True, total_records=0, checkpoints_verified=0)
+        return AuditVerificationResult(
+            valid=True,
+            records_verified=0,
+            total_records=0,
+            head_seq=0,
+            head_hash=None,
+            checkpoints_verified=0,
+        )
 
     # 3. Verify internal hash-chain continuity & recalculate SHA-256 hashes
     for i, record in enumerate(records):
@@ -69,7 +84,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
         if record.seq != expected_seq:
             return AuditVerificationResult(
                 valid=False,
+                records_verified=total,
                 total_records=total,
+                head_seq=head_seq,
+                head_hash=head_hash,
                 checkpoints_verified=0,
                 broken_seq=expected_seq,
                 error=f"Sequence discontinuity: expected seq {expected_seq}, found {record.seq}",
@@ -80,7 +98,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
             if record.prev_hash != GENESIS_PREV_HASH:
                 return AuditVerificationResult(
                     valid=False,
+                    records_verified=total,
                     total_records=total,
+                    head_seq=head_seq,
+                    head_hash=head_hash,
                     checkpoints_verified=0,
                     broken_seq=1,
                     error="Genesis record prev_hash mismatch",
@@ -90,7 +111,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
             if record.prev_hash != prev_record.hash:
                 return AuditVerificationResult(
                     valid=False,
+                    records_verified=total,
                     total_records=total,
+                    head_seq=head_seq,
+                    head_hash=head_hash,
                     checkpoints_verified=0,
                     broken_seq=record.seq,
                     error=(
@@ -105,7 +129,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
         if record.hash != recalculated_hash:
             return AuditVerificationResult(
                 valid=False,
+                records_verified=total,
                 total_records=total,
+                head_seq=head_seq,
+                head_hash=head_hash,
                 checkpoints_verified=0,
                 broken_seq=record.seq,
                 error=f"Payload tampered or hash mismatch at seq {record.seq}",
@@ -119,7 +146,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
     if chk_int > 0 and total >= chk_int and len(checkpoints) == 0:
         return AuditVerificationResult(
             valid=False,
+            records_verified=total,
             total_records=total,
+            head_seq=head_seq,
+            head_hash=head_hash,
             checkpoints_verified=0,
             broken_seq=chk_int,
             error=(
@@ -134,7 +164,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
         if cp.seq <= prev_cp_seq:
             return AuditVerificationResult(
                 valid=False,
+                records_verified=total,
                 total_records=total,
+                head_seq=head_seq,
+                head_hash=head_hash,
                 checkpoints_verified=0,
                 broken_seq=cp.seq,
                 error=f"Checkpoint sequence non-monotonic or corrupted at seq {cp.seq}",
@@ -146,7 +179,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
         if not hmac.compare_digest(cp.signature, expected_sig):
             return AuditVerificationResult(
                 valid=False,
+                records_verified=total,
                 total_records=total,
+                head_seq=head_seq,
+                head_hash=head_hash,
                 checkpoints_verified=0,
                 broken_seq=cp.seq,
                 error=f"Audit checkpoint signature invalid or tampered at seq {cp.seq}",
@@ -156,7 +192,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
         if total < cp.seq:
             return AuditVerificationResult(
                 valid=False,
+                records_verified=total,
                 total_records=total,
+                head_seq=head_seq,
+                head_hash=head_hash,
                 checkpoints_verified=0,
                 broken_seq=cp.seq,
                 error=(
@@ -170,7 +209,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
         if chain_rec.hash != cp.head_hash:
             return AuditVerificationResult(
                 valid=False,
+                records_verified=total,
                 total_records=total,
+                head_seq=head_seq,
+                head_hash=head_hash,
                 checkpoints_verified=0,
                 broken_seq=cp.seq,
                 error=(
@@ -180,5 +222,10 @@ async def verify_audit_chain(session: AsyncSession) -> AuditVerificationResult:
             )
 
     return AuditVerificationResult(
-        valid=True, total_records=total, checkpoints_verified=len(checkpoints)
+        valid=True,
+        records_verified=total,
+        total_records=total,
+        head_seq=head_seq,
+        head_hash=head_hash,
+        checkpoints_verified=len(checkpoints),
     )

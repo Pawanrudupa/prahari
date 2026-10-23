@@ -24,12 +24,16 @@ function computeOverviewCameraPos(
     if (r > maxR) maxR = r;
   }
 
-  // Margin factor so all nodes fit comfortably inside FOV
-  const dist = Math.max(26, maxR * 1.55);
-  return new THREE.Vector3(0, Number((dist * 0.45).toFixed(2)), Number((dist * 0.88).toFixed(2)));
+  // Margin factor accounting for overlays: LeftRail (64px), LiveEventFeed (360px right), simulator bar (bottom)
+  const dist = Math.max(30, maxR * 1.85);
+  return new THREE.Vector3(
+    2.4,
+    Number((dist * 0.48).toFixed(2)),
+    Number((dist * 0.95).toFixed(2)),
+  );
 }
 
-const DEFAULT_TARGET = new THREE.Vector3(0, 0, 0);
+const DEFAULT_TARGET = new THREE.Vector3(2.4, 0.4, 0);
 
 export function CameraController({
   agentPositions,

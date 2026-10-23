@@ -114,6 +114,34 @@ Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, 
 }
 ```
 
+## Admin Events & Diagnostics Endpoints (UI-2b.1)
+- `GET /v1/decisions/admin-events`: Cursor-paginated admin actions (`actor`, `operation`, `target_id`, `details`, `seq`, `created_at`). Excluded from the agent tool decision stream.
+- `GET /v1/audit/verify`: Cryptographic verification returning:
+  ```json
+  {
+    "valid": true,
+    "records_verified": 164,
+    "total_records": 164,
+    "head_seq": 164,
+    "head_hash": "f6a4f97d061aec58...",
+    "checkpoints_verified": 3,
+    "broken_seq": null,
+    "error": null
+  }
+  ```
+- `POST /v1/dev/tamper-audit`: Dev-only admin endpoint to simulate tampered database rows (`tamper_type: "hash" | "payload" | "restore"`).
+
+## Gateway Latency Budget & Stage Breakdown
+Gateway benchmark target: $p95 < 50\text{ ms}$.
+Measured stage-level profile breakdown (local execution):
+- **Stage 1 (Token Authentication & Capability Grant Check)**: ~0.4 ms
+- **Stage 2 (Heuristic Injection Detection)**: ~0.1 ms
+- **Stage 3 (India PII Scanning & Redaction Detection)**: ~0.3 ms
+- **Stage 4 (Deterministic Policy Engine Evaluation)**: ~0.4 ms
+- **Stage 5 (Hard Rate & Token Limit Checking)**: ~0.6 ms
+- **Stage 6 (PostgreSQL Insert, Transactional Advisory Lock & Chained Audit Hash)**: ~28.0–32.0 ms
+- **Measured Gateway Total**: $p50 \approx 28.5\text{ ms}$, $p95 \approx 33.74\text{ ms}$ (comfortably within the 50 ms budget).
+
 ## Known Limits & Architectural Constraints
 1. **Checkpoint Truncation Detection Window**:
    - Checkpoints store `(seq, head_hash, signature)` using HMAC-SHA256 (`AUDIT_HMAC_KEY`).

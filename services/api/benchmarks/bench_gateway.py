@@ -6,6 +6,7 @@ import os
 import statistics
 import sys
 import time
+from typing import Any
 from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
@@ -110,7 +111,7 @@ async def _ensure_postgres_db_exists(target_url: str) -> None:
         pass
 
 
-async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
+async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
     """Run sequential tool call requests and compute latency percentiles."""
     db_url = get_benchmark_db_url()
     is_postgres = bool(db_url and ("postgres" in db_url))
@@ -190,6 +191,16 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
 
     policy = get_fallback_policy()
     latencies_ms: list[float] = []
+    stage_breakdown: dict[str, list[float]] = {
+        "auth_ms": [],
+        "grants_ms": [],
+        "stubs_ms": [],
+        "policy_ms": [],
+        "limits_ms": [],
+        "audit_ms": [],
+        "events_ms": [],
+        "relational_persist_ms": [],
+    }
 
     # 2. Warm up (10 requests)
     for i in range(10):
@@ -212,9 +223,13 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
         )
         async with session_maker() as session:
             start = time.perf_counter()
-            await execute_gateway_pipeline(session, redis_client, req, active_policy=policy)
+            resp = await execute_gateway_pipeline(session, redis_client, req, active_policy=policy)
             elapsed_ms = (time.perf_counter() - start) * 1000.0
             latencies_ms.append(elapsed_ms)
+            if resp.stage_timings:
+                for k, v in resp.stage_timings.items():
+                    if k in stage_breakdown:
+                        stage_breakdown[k].append(v)
 
     # Clean up benchmark data on teardown
     if is_postgres:
@@ -224,7 +239,8 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
                 await conn.execute(
                     text(
                         "TRUNCATE TABLE agent_tool_grants, agents, tools, "
-                        "audit_log, audit_checkpoints CASCADE"
+                        "audit_log, audit_checkpoints, sessions, actions, "
+                        "decisions, approvals CASCADE"
                     )
                 )
 
@@ -238,6 +254,18 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
     p95_idx = int(0.95 * len(latencies_sorted))
     p99_idx = int(0.99 * len(latencies_sorted))
 
+    stages_summary: dict[str, dict[str, float]] = {}
+    for stage_name, vals in stage_breakdown.items():
+        if vals:
+            sorted_v = sorted(vals)
+            s_p50 = sorted_v[int(0.50 * len(sorted_v))]
+            s_p95 = sorted_v[int(0.95 * len(sorted_v))]
+            stages_summary[stage_name] = {
+                "mean": statistics.mean(vals),
+                "p50": s_p50,
+                "p95": s_p95,
+            }
+
     return {
         "count": float(num_requests),
         "min": min(latencies_ms),
@@ -247,6 +275,7 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, float]:
         "p95": latencies_sorted[p95_idx],
         "p99": latencies_sorted[p99_idx],
         "max": max(latencies_ms),
+        "stages": stages_summary,
     }
 
 
@@ -266,6 +295,21 @@ def main() -> None:
     print(f"p99 Latency     : {results['p99']:.2f} ms")
     print(f"Max Latency     : {results['max']:.2f} ms")
     print("-" * 60)
+
+    stages: dict[str, dict[str, float]] = results.get("stages", {})
+    if stages:
+        print("Stage-Level Timing Breakdown:")
+        print(f"  {'Stage':<24} | {'Mean':<10} | {'p50':<10} | {'p95':<10}")
+        print(f"  {'-'*24}-+-{'-'*10}-+-{'-'*10}-+-{'-'*10}")
+        for s_name, s_data in stages.items():
+            mean_v = s_data["mean"]
+            p50_v = s_data["p50"]
+            p95_v = s_data["p95"]
+            print(
+                f"  {s_name:<24} | {mean_v:>7.2f} ms | "
+                f"{p50_v:>7.2f} ms | {p95_v:>7.2f} ms"
+            )
+        print("-" * 60)
 
     p95 = results["p95"]
     if p95 < 50.0:

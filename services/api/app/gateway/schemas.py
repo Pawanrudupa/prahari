@@ -38,3 +38,4 @@ class ToolCallResponse(BaseModel):
     decision_id: UUID = Field(default_factory=uuid4)
     action_id: UUID | None = None
     data_classes: list[str] = Field(default_factory=list)
+    stage_timings: dict[str, float] | None = None

@@ -42,9 +42,7 @@ const ROADMAP_NAV_ITEMS: NavItem[] = [
 
 export function LeftRail() {
   const location = useLocation();
-  const pendingEscalations = useGraphStore((s) => s.pendingEscalations);
-
-  const totalPending = Array.from(pendingEscalations.values()).reduce((a, b) => a + b, 0);
+  const pendingApprovalsCount = useGraphStore((s) => s.pendingApprovalsCount);
 
   return (
     <nav className="flex w-16 flex-col items-center gap-2 border-r border-white/[0.08] bg-slate-950/80 backdrop-blur-xl py-4 z-20 select-none overflow-y-auto">
@@ -68,9 +66,12 @@ export function LeftRail() {
                 }`}
               >
                 <Icon className="w-5 h-5" />
-                {item.path === "/app/approvals" && totalPending > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-purple-500 text-[9px] font-bold text-white shadow-lg animate-pulse">
-                    {totalPending}
+                {item.path === "/app/approvals" && pendingApprovalsCount > 0 && (
+                  <span
+                    data-testid="nav-approvals-badge"
+                    className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-purple-500 text-[9px] font-bold text-white shadow-lg animate-pulse"
+                  >
+                    {pendingApprovalsCount}
                   </span>
                 )}
               </Link>

@@ -29,6 +29,12 @@ def validate_policy_logic(policy: PolicyDefinition) -> None:
     if policy.version <= 0:
         errors.append(f"Policy version must be positive integer, got {policy.version}")
 
+    if policy.defaults.decision.lower() != "deny":
+        errors.append(
+            "Policy defaults.decision must strictly be 'deny' to ensure fail-closed governance; "
+            f"'{policy.defaults.decision}' is forbidden"
+        )
+
     seen_ids: set[str] = set()
     for rule in policy.rules:
         if rule.id in seen_ids:

@@ -1,6 +1,7 @@
 """Table-driven unit tests for the Prahari deterministic policy engine."""
 
 import pytest
+from pydantic import ValidationError
 
 from app.policy.engine import evaluate_policy
 from app.policy.loader import PolicyValidationError, load_policy_from_yaml
@@ -375,15 +376,17 @@ def test_invalid_policy_non_positive_version() -> None:
         load_policy_from_yaml(yaml_bad_ver)
 
 
-def test_default_policy_configurable() -> None:
-    """Confirm defaults other than deny can be configured if declared."""
-    policy = PolicyDefinition(
-        policy="open-guard",
-        version=1,
-        defaults=PolicyDefaults(decision="allow"),
-        rules=[],
-    )
-    ctx = EvaluationContext(tool="any.tool")
-    dec = evaluate_policy(policy, ctx)
-    assert dec.outcome == "allow"
-    assert dec.rule_id is None
+def test_default_policy_must_be_deny() -> None:
+    """Confirm defaults other than deny are strictly rejected to enforce fail-closed invariant."""
+    with pytest.raises(ValidationError, match="defaults.decision must strictly be 'deny'"):
+        PolicyDefaults(decision="allow")
+
+    yaml_bad_default = """
+policy: open-guard
+version: 1
+defaults:
+  decision: allow
+rules: []
+"""
+    with pytest.raises(PolicyValidationError, match="defaults.decision must strictly be 'deny'"):
+        load_policy_from_yaml(yaml_bad_default)

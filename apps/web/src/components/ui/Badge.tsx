@@ -86,7 +86,7 @@ export function Badge({
     },
   };
 
-  const style = variantStyles[variant];
+  const style = (variant && variantStyles[variant]) || variantStyles.neutral;
 
   return (
     <span

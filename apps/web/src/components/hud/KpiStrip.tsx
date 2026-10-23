@@ -20,7 +20,7 @@ export function computeP95Latency(latencies: number[], minSamples = 5): string {
 
 export function KpiStrip() {
   const decisions = useGraphStore((s) => s.decisions);
-  const pendingEscalations = useGraphStore((s) => s.pendingEscalations);
+  const pendingApprovalsCount = useGraphStore((s) => s.pendingApprovalsCount);
   const latestAuditSeq = useGraphStore((s) => s.latestAuditSeq);
   const showStressNodes = useGraphStore((s) => s.showStressNodes);
   const agents = useGraphStore((s) => s.agents);
@@ -62,21 +62,16 @@ export function KpiStrip() {
 
     const p95 = computeP95Latency(latencies, 5);
 
-    let totalPending = 0;
-    for (const count of pendingEscalations.values()) {
-      totalPending += count;
-    }
-
     return {
       allow,
       redact,
       escalate,
       deny,
       p95,
-      totalPending,
+      totalPending: pendingApprovalsCount,
       decisionsPerMin: lastMinuteCount || (decisions.length > 0 ? Math.min(decisions.length * 2, 45) : 0),
     };
-  }, [decisions, pendingEscalations, showStressNodes, agents]);
+  }, [decisions, pendingApprovalsCount, showStressNodes, agents]);
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs font-mono select-none">

@@ -2,9 +2,10 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
+from app.models.session import Action
 
 
 class Decision(UUIDPrimaryKeyMixin, Base):
@@ -25,6 +26,8 @@ class Decision(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    action: Mapped["Action"] = relationship("Action")
 
 
 class Approval(UUIDPrimaryKeyMixin, Base):
@@ -57,3 +60,5 @@ class Approval(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    decision: Mapped["Decision"] = relationship("Decision")

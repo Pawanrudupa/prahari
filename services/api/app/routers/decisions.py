@@ -45,6 +45,27 @@ class DecisionsListResponse(BaseModel):
     total_count: int | None = None
 
 
+class AdminEventItem(BaseModel):
+    id: UUID
+    seq: int
+    prev_hash: str
+    hash: str
+    actor: str
+    operation: str
+    target: str
+    details: dict[str, Any] = Field(default_factory=dict)
+    timestamp: str
+    created_at: datetime
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminEventsListResponse(BaseModel):
+    items: list[AdminEventItem]
+    next_cursor: int | None = None
+    has_more: bool = False
+    total_count: int | None = None
+
+
 @router.get(
     "",
     response_model=DecisionsListResponse,
@@ -99,9 +120,14 @@ async def list_decisions(
     for row in rows:
         payload = row.payload_json or {}
 
-        # Only process decision / action events
+        # Only process governance tool decision events (allow, redact, escalate, deny)
+        # Invariant: admin events must NOT appear as decisions attributed to agents
         item_outcome = str(payload.get("outcome", "")).lower()
-        if not item_outcome:
+        if (
+            item_outcome not in ("allow", "redact", "escalate", "deny")
+            or payload.get("rule_id") == "admin_action"
+            or payload.get("event_category") == "admin"
+        ):
             continue
 
         item_agent_id = str(payload.get("agent_id", ""))
@@ -154,4 +180,84 @@ async def list_decisions(
         next_cursor=next_cursor,
         has_more=has_more,
         total_count=len(filtered_items),
+    )
+
+
+@router.get(
+    "/admin-events",
+    response_model=AdminEventsListResponse,
+    summary="List administrative audit events (default excluded from decision log)",
+    dependencies=[Depends(require_session_or_admin_token)],
+)
+async def list_admin_events(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    cursor: Annotated[int | None, Query(description="Cursor seq (< cursor)")] = None,
+    limit: Annotated[int, Query(ge=1, le=200, description="Page size limit")] = 50,
+    actor: Annotated[str | None, Query(description="Filter by actor")] = None,
+    operation: Annotated[str | None, Query(description="Filter by operation")] = None,
+) -> AdminEventsListResponse:
+    """
+    Search and paginate administrative state-change audit events.
+    Displays actor, operation, target, safe details, and sequence verification.
+    """
+    stmt = select(AuditLog)
+    if cursor is not None:
+        stmt = stmt.where(AuditLog.seq < cursor)
+
+    stmt = stmt.order_by(AuditLog.seq.desc()).limit(limit * 3)
+    result = await db.execute(stmt)
+    rows = list(result.scalars().all())
+
+    items: list[AdminEventItem] = []
+    actor_lower = actor.lower().strip() if actor else None
+    op_lower = operation.lower().strip() if operation else None
+
+    for row in rows:
+        payload = row.payload_json or {}
+        is_admin = (
+            payload.get("event_category") == "admin"
+            or payload.get("rule_id") == "admin_action"
+            or payload.get("outcome") == "admin_action"
+            or str(payload.get("event_type", "")).startswith(
+                ("agent.", "tool.", "policy.", "stress.", "approval.decided")
+            )
+        )
+        if not is_admin:
+            continue
+
+        item_actor = str(payload.get("actor") or "admin")
+        item_op = str(payload.get("operation") or payload.get("event_type") or "admin_action")
+        item_target = str(payload.get("target") or payload.get("tool") or "system")
+
+        if actor_lower and actor_lower not in item_actor.lower():
+            continue
+        if op_lower and op_lower not in item_op.lower():
+            continue
+
+        items.append(
+            AdminEventItem(
+                id=row.id,
+                seq=row.seq,
+                prev_hash=row.prev_hash,
+                hash=row.hash,
+                actor=item_actor,
+                operation=item_op,
+                target=item_target,
+                details=dict(payload.get("details") or {}),
+                timestamp=str(payload.get("timestamp") or row.created_at.isoformat()),
+                created_at=row.created_at,
+                raw_payload=payload,
+            )
+        )
+        if len(items) == limit:
+            break
+
+    has_more = len(items) == limit and len(rows) > limit
+    next_cursor = items[-1].seq if (has_more and items) else None
+
+    return AdminEventsListResponse(
+        items=items,
+        next_cursor=next_cursor,
+        has_more=has_more,
+        total_count=len(items),
     )

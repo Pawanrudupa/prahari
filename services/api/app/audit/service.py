@@ -82,13 +82,27 @@ async def record_admin_audit_event(
         for k, v in details.items()
         if "secret" not in k.lower() and (k == "key_prefix" or "key" not in k.lower())
     }
+    target_val = str(
+        agent_id
+        or tool
+        or details.get("agent_id")
+        or details.get("tool_id")
+        or details.get("policy_id")
+        or details.get("agent_name")
+        or details.get("tool_name")
+        or "system"
+    )
     payload = {
         "event_type": event_type,
+        "event_category": "admin",
+        "actor": "admin",
+        "operation": event_type,
+        "target": target_val,
         "agent_id": str(agent_id) if agent_id else "system",
         "tool": tool or "admin",
         "args_hash": hashlib.sha256(canonical_json(safe_details).encode("utf-8")).hexdigest(),
         "data_classes": [],
-        "outcome": "allow",
+        "outcome": "admin_action",
         "rule_id": "admin_action",
         "policy_version": 1,
         "reason": f"admin_operation:{event_type}",

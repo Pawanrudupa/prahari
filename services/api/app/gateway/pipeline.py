@@ -2,6 +2,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -139,12 +140,16 @@ async def execute_gateway_pipeline(
 
     FAIL CLOSED INVARIANT: Any error in the decision path yields deny with reason engine_error.
     """
+    t_pipeline_start = time.perf_counter()
+    stage_timings: dict[str, float] = {}
     decision_id = uuid4()
     agent: Agent | None = None
 
     # Step 1: Identity & Authentication
     # Note: Authentication errors raise AuthError and are handled by the caller/router for HTTP 401
+    t_auth_start = time.perf_counter()
     agent = await authenticate_agent(session, req.agent_key)
+    stage_timings["auth_ms"] = (time.perf_counter() - t_auth_start) * 1000.0
     agent_id: UUID = agent.id
 
     try:
@@ -186,13 +191,15 @@ async def execute_gateway_pipeline(
             )
 
         # Step 2b: Tool Grant Capability Check ("No grants = no tools" invariant)
+        t_grants_start = time.perf_counter()
         grants_stmt = (
-            select(Tool.name)
+            select(Tool.id, Tool.name)
             .join(AgentToolGrant, AgentToolGrant.tool_id == Tool.id)
             .where(AgentToolGrant.agent_id == agent_id)
         )
         granted_res = await session.execute(grants_stmt)
-        granted_tools = set(granted_res.scalars().all())
+        granted_tools = {name: tool_id for tool_id, name in granted_res.all()}
+        stage_timings["grants_ms"] = (time.perf_counter() - t_grants_start) * 1000.0
 
         if req.tool not in granted_tools:
             audit_payload = build_audit_payload(
@@ -230,6 +237,8 @@ async def execute_gateway_pipeline(
                 reason="tool_not_granted",
                 decision_id=decision_id,
             )
+
+        tool_id = granted_tools[req.tool]
 
         # Step 2c: Approval Token Redemption (if retrying an approved escalated call)
         if req.approval_token:
@@ -358,13 +367,14 @@ async def execute_gateway_pipeline(
                 data_classes=[],
             )
 
-        # Step 3: Inbound Injection Scan
+        # Step 3: Inbound Injection Scan & Step 4: PII Detection
+        t_stubs_start = time.perf_counter()
         injection_score = scan_injection(req.context)
-
-        # Step 4: PII Detection
         data_classes = detect_pii(req.args)
+        stage_timings["stubs_ms"] = (time.perf_counter() - t_stubs_start) * 1000.0
 
         # Step 5: Policy Evaluation
+        t_policy_start = time.perf_counter()
         if active_policy is None:
             active_policy = await get_active_policy(session)
 
@@ -386,8 +396,10 @@ async def execute_gateway_pipeline(
 
         if outcome == "redact":
             redacted_args = redact_args(req.args, decision.redacted_fields)
+        stage_timings["policy_ms"] = (time.perf_counter() - t_policy_start) * 1000.0
 
         # Step 6: Budget & Loop Limits Check (only if not already denied)
+        t_limits_start = time.perf_counter()
         if outcome in ("allow", "redact"):
             limit_res = await check_limits(
                 redis=redis,
@@ -418,6 +430,7 @@ async def execute_gateway_pipeline(
                     event_type=limit_event_type,
                 )
                 await append_audit_log(session, degraded_payload)
+        stage_timings["limits_ms"] = (time.perf_counter() - t_limits_start) * 1000.0
 
         # Step 7: Risk Score (advisory signal - can tighten allow -> escalate, never permit deny)
         if outcome == "allow" and injection_score >= 0.7:
@@ -425,6 +438,7 @@ async def execute_gateway_pipeline(
             reason = f"High risk/injection signal detected (score: {injection_score:.2f})"
 
         # Step 8: Append Serialized Hash-Chained Audit Record
+        t_audit_start = time.perf_counter()
         audit_payload = build_audit_payload(
             agent_id=agent_id,
             tool=req.tool,
@@ -437,8 +451,10 @@ async def execute_gateway_pipeline(
             session_id=req.session_id,
         )
         audit_entry = await append_audit_log(session, audit_payload)
+        stage_timings["audit_ms"] = (time.perf_counter() - t_audit_start) * 1000.0
 
         # Step 9: Best-effort event publishing to Redis pub/sub and WebSocket streams
+        t_events_start = time.perf_counter()
         with contextlib.suppress(Exception):
             await publish_event(
                 "action.decided",
@@ -458,16 +474,15 @@ async def execute_gateway_pipeline(
                     "latency_ms": 0.0,
                 },
             )
+        stage_timings["events_ms"] = (time.perf_counter() - t_events_start) * 1000.0
 
         approval_id: UUID | None = uuid4() if outcome == "escalate" else None
 
-        # Step 8b: Persist Relational Session, Action, Decision, and Approval rows
+        # Step 8b: Persist Relational Session, Action, Decision, and Approval rows (batch-committed)
+        t_rel_start = time.perf_counter()
         action_id = uuid4()
-        tool_obj = (
-            await session.execute(select(Tool).where(Tool.name == req.tool))
-        ).scalar_one_or_none()
 
-        if tool_obj:
+        if tool_id:
             session_obj = await session.get(Session, req.session_id)
             if not session_obj:
                 session_obj = Session(
@@ -476,26 +491,26 @@ async def execute_gateway_pipeline(
                     goal=req.purpose or f"Execution task workflow for {agent.name}",
                 )
                 session.add(session_obj)
-                await session.flush()
-
-            act_seq = (
-                await session.execute(
-                    select(func.count(Action.id)).where(Action.session_id == req.session_id)
-                )
-            ).scalar() or 0
+                act_seq = 1
+            else:
+                act_seq = (
+                    await session.execute(
+                        select(func.count(Action.id)).where(Action.session_id == req.session_id)
+                    )
+                ).scalar() or 0
+                act_seq += 1
 
             action_record = Action(
                 id=action_id,
                 session_id=req.session_id,
-                seq=act_seq + 1,
-                tool_id=tool_obj.id,
+                seq=act_seq,
+                tool_id=tool_id,
                 args_json=redacted_args or req.args,
                 purpose=req.purpose,
                 data_classes=data_classes,
                 parent_action_id=req.parent_action_id,
             )
             session.add(action_record)
-            await session.flush()
 
             decision_record = Decision(
                 id=decision_id,
@@ -505,7 +520,7 @@ async def execute_gateway_pipeline(
                 reason=reason,
                 risk_score=float(injection_score),
                 injection_score=float(injection_score),
-                latency_ms=0,
+                latency_ms=int(stage_timings.get("policy_ms", 0)),
             )
             session.add(decision_record)
             await session.flush()
@@ -518,7 +533,7 @@ async def execute_gateway_pipeline(
                     id=approval_id,
                     decision_id=decision_id,
                     agent_id=agent_id,
-                    tool_id=tool_obj.id,
+                    tool_id=tool_id,
                     args_hash=args_hash_val,
                     risk_score=float(injection_score),
                     rule_id=rule_id,
@@ -527,7 +542,6 @@ async def execute_gateway_pipeline(
                     token_consumed=False,
                 )
                 session.add(approval_record)
-                await session.flush()
 
                 # Record audit event for approval creation
                 approval_audit = build_audit_payload(
@@ -563,6 +577,8 @@ async def execute_gateway_pipeline(
                     )
 
             await session.commit()
+        stage_timings["relational_persist_ms"] = (time.perf_counter() - t_rel_start) * 1000.0
+        stage_timings["total_ms"] = (time.perf_counter() - t_pipeline_start) * 1000.0
 
         return ToolCallResponse(
             decision=outcome,
@@ -573,6 +589,7 @@ async def execute_gateway_pipeline(
             decision_id=decision_id,
             action_id=action_id,
             data_classes=data_classes,
+            stage_timings=stage_timings,
         )
 
     except Exception as exc:

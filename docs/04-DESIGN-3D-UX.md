@@ -149,9 +149,23 @@ A scroll-driven, high-credibility narrative with zero backend dependencies:
 - **Theme Enforcement**: Dark theme lock (WCAG AA contrast verified).
 - **Session Controls & About**: Build version, runtime environment, and sign-out action.
 
-### 4. LeftRail Roadmap Partitioning
-- Active links for fully built routes (`/app/constellation`, `/app/agents`, `/app/decisions`, `/app/settings`).
-- Unbuilt roadmap capabilities (`Approvals Queue`, `Policy Studio`, `Session DAG`) grouped under a dedicated "Roadmap" section with descriptive hover tooltips, avoiding broken links or dead-ends.
+### 4. Active Modules & Roadmap Partitioning
+- **Active Operational Modules**:
+  - `/app/constellation`: 3D agent capability constellation with live particle interception and panel-offset camera framing (1280x720 and 1920x1080 verified).
+  - `/app/agents`: Registered agents and tools, key rotation, and capability grants editor.
+  - `/app/decisions`: Virtualized decision audit ledger, tabbed separation of Governance Decisions and Admin Events, detail drawer, and cryptographic hash-chain verifier.
+  - `/app/approvals`: Human reviewer card deck with keyboard shortcuts (`A` approve, `D` deny, `J`/`K` navigation), bound tokens, and WebSocket-driven pending queue synchronization.
+  - `/app/policies`: Policy Studio with Monaco editor, fail-closed starter templates (`defaults.decision: deny`), dry-run validator, version history, and one-click rollback.
+  - `/app/sessions`: Causal session workflow DAG with timeline scrubber and detail inspection drawer.
+  - `/app/settings`: Hardware WebGL renderer detection, quality presets, reduced motion, and dark theme lock.
+- **Unbuilt Roadmap Capabilities**:
+  - `Incidents`, `Replay`, `Red-team`, and `Reports` remain partitioned under a disabled "Roadmap" group with descriptive tooltips.
+
+### 5. UI-2b.1 Fix Pass Enhancements
+- **Constellation Overlay Framing**: Camera target offset to `(2.4, 0.4, 0)` with dynamic bounding sphere radius calculation ensures all nodes remain clearly visible and unobstructed by floating overlay panels (Event Feed, Legend, Simulator Controller) across both 720p and 1080p displays.
+- **Approvals Live State Synchronization**: Nav badge, KPI strip, and Approvals queue rely strictly on verified pending database rows from `GET /v1/approvals?status=pending` updated via WebSocket `approval.created`/`approval.decided` events rather than particle emissions.
+- **Admin Events Audit Separation**: `admin_action` records are partitioned out of standard agent decision tables into an explicit "Admin Events" view detailing actor, operation, and target.
+- **Cryptographic Verification Modal**: Full diagnostic report showing total records verified, head sequence number, head hash with copy utility, HMAC checkpoints checked, and precise broken sequence locator upon integrity failure.
 
 ---
 

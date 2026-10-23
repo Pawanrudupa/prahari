@@ -20,6 +20,7 @@ interface GraphState {
   hoveredNodeId: string | null;
   webglLost: boolean;
   pendingEscalations: Map<string, number>;
+  pendingApprovalsCount: number;
   liveEventListener: ((event: DecisionEvent) => void) | null;
   cameraPreset: "overview" | "follow_agent" | "top_down";
   showStressNodes: boolean;
@@ -33,6 +34,10 @@ interface GraphState {
   setCameraPreset: (preset: "overview" | "follow_agent" | "top_down") => void;
   setShowStressNodes: (show: boolean) => void;
   toggleShowStressNodes: () => void;
+  setPendingApprovalsCount: (count: number) => void;
+  incrementPendingApprovals: () => void;
+  decrementPendingApprovals: () => void;
+  fetchPendingApprovals: (token?: string) => Promise<void>;
   resolveEscalation: (agentId: string) => void;
   clearEscalations: () => void;
   setLiveEventListener: (fn: ((event: DecisionEvent) => void) | null) => void;
@@ -50,6 +55,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   hoveredNodeId: null,
   webglLost: false,
   pendingEscalations: new Map(),
+  pendingApprovalsCount: 0,
   liveEventListener: null,
   cameraPreset: "overview",
   showStressNodes: false,
@@ -231,6 +237,32 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
   toggleShowStressNodes: () => {
     set({ showStressNodes: !get().showStressNodes });
+  },
+
+  setPendingApprovalsCount: (count: number) => {
+    set({ pendingApprovalsCount: Math.max(0, count) });
+  },
+
+  incrementPendingApprovals: () => {
+    set((state) => ({ pendingApprovalsCount: state.pendingApprovalsCount + 1 }));
+  },
+
+  decrementPendingApprovals: () => {
+    set((state) => ({ pendingApprovalsCount: Math.max(0, state.pendingApprovalsCount - 1) }));
+  },
+
+  fetchPendingApprovals: async (token?: string) => {
+    try {
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch("/v1/approvals?status=pending", { headers });
+      if (res.ok) {
+        const data = await res.json();
+        set({ pendingApprovalsCount: Array.isArray(data) ? data.length : 0 });
+      }
+    } catch {
+      // Ignore network errors on background fetch
+    }
   },
 
   resolveEscalation: (agentId: string) => {

@@ -3,7 +3,7 @@
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Effect = Literal["allow", "deny", "redact", "escalate"]
 
@@ -44,7 +44,17 @@ class PolicyRule(BaseModel):
 class PolicyDefaults(BaseModel):
     """Default policy behavior when no rules match."""
 
-    decision: Effect = "deny"
+    decision: str = "deny"
+
+    @field_validator("decision")
+    @classmethod
+    def validate_decision(cls, v: str) -> str:
+        if v.lower() != "deny":
+            raise ValueError(
+                "Policy defaults.decision must strictly be 'deny' to ensure "
+                f"fail-closed governance; '{v}' is forbidden."
+            )
+        return "deny"
 
     model_config = ConfigDict(extra="forbid")
 
