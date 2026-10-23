@@ -93,6 +93,8 @@ export function LiveEventFeed() {
   return (
     <aside
       aria-label="Live Event Feed"
+      data-testid="live-event-feed"
+      id="hud-live-event-feed"
       className="w-80 rounded-2xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-2xl flex flex-col overflow-hidden text-xs font-mono select-none"
     >
       {/* Header & Toggle */}

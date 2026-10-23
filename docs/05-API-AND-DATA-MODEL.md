@@ -129,28 +129,35 @@ Types: `action.decided`, `approval.pending`, `incident.opened`, `agent.status`, 
     "error": null
   }
   ```
-- `POST /v1/dev/tamper-audit`: Dev-only admin endpoint to simulate tampered database rows (`tamper_type: "hash" | "payload" | "restore"`).
+- `Audit Log Immutability`: No HTTP route exists to mutate or delete audit log records (`PUT`/`PATCH`/`DELETE` return 404/405; no tamper route exists). Cryptographic tampering tests in CI/harnesses execute direct SQL mutations against isolated test databases only.
 
 ## Gateway Latency Budget & Stage Breakdown
 Gateway benchmark target: $p95 < 50\text{ ms}$.
-Measured stage-level profile breakdown (local execution):
-- **Stage 1 (Token Authentication & Capability Grant Check)**: ~0.4 ms
-- **Stage 2 (Heuristic Injection Detection)**: ~0.1 ms
-- **Stage 3 (India PII Scanning & Redaction Detection)**: ~0.3 ms
-- **Stage 4 (Deterministic Policy Engine Evaluation)**: ~0.4 ms
-- **Stage 5 (Hard Rate & Token Limit Checking)**: ~0.6 ms
-- **Stage 6 (PostgreSQL Insert, Transactional Advisory Lock & Chained Audit Hash)**: ~28.0–32.0 ms
-- **Measured Gateway Total**: $p50 \approx 28.5\text{ ms}$, $p95 \approx 33.74\text{ ms}$ (comfortably within the 50 ms budget).
+Measured stage-level profile breakdown (local execution, single-transaction optimized):
+- **Stage 1 (Token Authentication & Capability Grant Check)**: ~3.0–3.3 ms
+- **Stage 2 (Heuristic Injection Detection)**: ~0.02 ms
+- **Stage 3 (India PII Scanning & Redaction Detection)**: ~0.02 ms
+- **Stage 4 (Deterministic Policy Engine Evaluation)**: ~0.09 ms
+- **Stage 5 (Hard Rate & Token Limit Checking)**: ~1.4–1.9 ms
+- **Stage 6 (PostgreSQL Insert, Transactional Advisory Lock & Chained Audit Hash)**: ~11.5–12.1 ms total
+  - `lock_wait_ms`: $p50 \approx 1.38\text{ ms}$, $p95 \approx 2.33\text{ ms}$
+  - `query_prev_ms`: $p50 \approx 1.74\text{ ms}$, $p95 \approx 2.97\text{ ms}$
+  - `hash_compute_ms`: $p50 \approx 0.05\text{ ms}$, $p95 \approx 0.10\text{ ms}$ (in-app SHA-256)
+  - `insert_ms`: $p50 \approx 0.04\text{ ms}$, $p95 \approx 0.07\text{ ms}$
+  - `checkpoint_ms`: $p50 \approx 0.01\text{ ms}$, $p95 \approx 0.02\text{ ms}$
+  - `commit_ms`: $p50 \approx 7.99\text{ ms}$, $p95 \approx 12.46\text{ ms}$ (single commit combining audit log, relational decisions/actions, and checkpoints)
+- **Relational Persistence Preparation**: ~3.9–4.1 ms
+- **Measured Gateway Total**: Sequential $p50 \approx 24.08\text{ ms}$, $p95 \approx 34.56\text{ ms}$, $p99 \approx 36.84\text{ ms}$ (comfortably within the 50 ms budget).
 
 ## Known Limits & Architectural Constraints
 1. **Checkpoint Truncation Detection Window**:
    - Checkpoints store `(seq, head_hash, signature)` using HMAC-SHA256 (`AUDIT_HMAC_KEY`).
    - Auto-checkpointed every `AUDIT_CHECKPOINT_INTERVAL` appends (default 50).
     - Deleting records appended after the most recent checkpoint `(k * N)` up to `(k * N) + m` can theoretically occur before the next checkpoint is persisted. `AUDIT_CHECKPOINT_INTERVAL` bounds this exposure; `/v1/audit/verify` flags if uncheckpointed rows exceed the interval or if checkpoint sequence monotonicity is broken.
-2. **Single-Chain Advisory Lock Sequencer**:
+2. **Single-Chain Advisory Lock Sequencer & Throughput Bound**:
    - Audit log append sequencing uses a PostgreSQL transactional advisory lock (`pg_advisory_xact_lock(740101)`).
    - Guarantees strict monotonic linear sequence numbers with zero forks under concurrent load.
-   - Tradeoff: Inherently serializes audit commits, limiting maximum write throughput to ~1,000–3,000 appends/sec per PostgreSQL database instance. Multi-region horizontal scale would require sharded partition chains.
+   - **Throughput Limit**: Measured single-chain throughput is capped at ~40–42 operations/second on PostgreSQL with WAL commit durability (sequential: 39.32 ops/sec; 20-way concurrent: 41.90 ops/sec, where concurrency queues on the transaction lock with $p50\text{ wait}\approx 240.56\text{ ms}$). To scale write throughput beyond ~50 ops/sec per instance in future phases, the architecture would migrate to tenant-partitioned hash chains or merkleized batch commitments.
 3. **Production Startup Secret Guard**:
    - Server refuses startup if default placeholder secrets (`ADMIN_TOKEN`, `AUDIT_HMAC_KEY`, `SESSION_SECRET_KEY`) are detected outside `ENV=development`.
 4. **Database Connection Pool Sizing Constraint**:

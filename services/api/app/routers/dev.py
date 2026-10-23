@@ -18,7 +18,6 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.redis import redis_client
 from app.models.agent import Agent
-from app.models.audit import AuditLog
 from app.models.tool import Tool
 
 # Ensure repository root is on sys.path for services.simulator import
@@ -242,78 +241,4 @@ async def dev_archive_stress(
         archived_agents=len(agents),
         archived_tools=len(tools),
         message=f"Successfully archived {len(agents)} stress agents and {len(tools)} stress tools.",
-    )
-
-
-class TamperAuditRequest(BaseModel):
-    seq: int | None = Field(
-        default=None,
-        description=(
-            "Sequence number of the audit log record to tamper. "
-            "If null, tampers the latest record."
-        ),
-    )
-    tamper_type: str = Field(
-        default="hash",
-        description="Type of tampering: 'hash', 'payload', or 'restore'",
-    )
-    restore_hash: str | None = Field(
-        default=None,
-        description="Original hash to restore when tamper_type is 'restore'",
-    )
-
-
-class TamperAuditResponse(BaseModel):
-    tampered_seq: int
-    original_hash: str
-    tampered_hash: str
-    tamper_type: str
-    message: str
-
-
-@router.post(
-    "/tamper-audit",
-    response_model=TamperAuditResponse,
-    summary="Tamper an audit log entry for cryptographic verification testing (Dev/Admin only)",
-    dependencies=[Depends(require_admin_token)],
-)
-async def tamper_audit_endpoint(
-    req: TamperAuditRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> TamperAuditResponse:
-    if settings.ENV not in ("development", "dev", "test"):
-        raise HTTPException(
-            status_code=403,
-            detail="Tamper endpoint only permitted in dev/test environments.",
-        )
-
-    if req.seq is not None:
-        stmt = select(AuditLog).where(AuditLog.seq == req.seq)
-    else:
-        stmt = select(AuditLog).order_by(AuditLog.seq.desc()).limit(1)
-
-    rec = (await db.execute(stmt)).scalar_one_or_none()
-    if not rec:
-        raise HTTPException(status_code=404, detail="No audit log record found to tamper.")
-
-    orig_hash = rec.hash
-    if req.tamper_type == "restore" and req.restore_hash:
-        new_hash = req.restore_hash
-        rec.hash = new_hash
-    elif req.tamper_type == "payload":
-        current_payload = dict(rec.payload_json or {})
-        current_payload["_tampered_by_dev"] = True
-        rec.payload_json = current_payload
-        new_hash = rec.hash
-    else:
-        new_hash = "deadbeef" * 8
-        rec.hash = new_hash
-
-    await db.commit()
-    return TamperAuditResponse(
-        tampered_seq=rec.seq,
-        original_hash=orig_hash,
-        tampered_hash=new_hash,
-        tamper_type=req.tamper_type,
-        message=f"Audit record seq {rec.seq} processed with {req.tamper_type}.",
     )

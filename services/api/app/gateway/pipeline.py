@@ -437,8 +437,7 @@ async def execute_gateway_pipeline(
             outcome = "escalate"
             reason = f"High risk/injection signal detected (score: {injection_score:.2f})"
 
-        # Step 8: Append Serialized Hash-Chained Audit Record
-        t_audit_start = time.perf_counter()
+        # Step 8: Append Serialized Hash-Chained Audit Record (Single atomic transaction)
         audit_payload = build_audit_payload(
             agent_id=agent_id,
             tool=req.tool,
@@ -450,8 +449,10 @@ async def execute_gateway_pipeline(
             reason=reason,
             session_id=req.session_id,
         )
-        audit_entry = await append_audit_log(session, audit_payload)
-        stage_timings["audit_ms"] = (time.perf_counter() - t_audit_start) * 1000.0
+        audit_sub_timings: dict[str, float] = {}
+        audit_entry = await append_audit_log(
+            session, audit_payload, auto_commit=False, timings=audit_sub_timings
+        )
 
         # Step 9: Best-effort event publishing to Redis pub/sub and WebSocket streams
         t_events_start = time.perf_counter()
@@ -478,7 +479,7 @@ async def execute_gateway_pipeline(
 
         approval_id: UUID | None = uuid4() if outcome == "escalate" else None
 
-        # Step 8b: Persist Relational Session, Action, Decision, and Approval rows (batch-committed)
+        # Step 8b: Persist Relational Session, Action, Decision, and Approval rows (single commit)
         t_rel_start = time.perf_counter()
         action_id = uuid4()
 
@@ -523,7 +524,6 @@ async def execute_gateway_pipeline(
                 latency_ms=int(stage_timings.get("policy_ms", 0)),
             )
             session.add(decision_record)
-            await session.flush()
 
             if outcome == "escalate" and approval_id:
                 args_hash_val = hashlib.sha256(
@@ -556,7 +556,9 @@ async def execute_gateway_pipeline(
                     session_id=req.session_id,
                     event_type="approval.created",
                 )
-                await append_audit_log(session, approval_audit)
+                await append_audit_log(
+                    session, approval_audit, auto_commit=False, timings=audit_sub_timings
+                )
 
                 with contextlib.suppress(Exception):
                     await publish_event(
@@ -576,8 +578,24 @@ async def execute_gateway_pipeline(
                         },
                     )
 
-            await session.commit()
-        stage_timings["relational_persist_ms"] = (time.perf_counter() - t_rel_start) * 1000.0
+        t_commit_start = time.perf_counter()
+        await session.commit()
+        t_commit_end = time.perf_counter()
+
+        commit_duration_ms = (t_commit_end - t_commit_start) * 1000.0
+        audit_sub_timings["commit_ms"] = commit_duration_ms
+        stage_timings["audit_ms"] = (
+            audit_sub_timings.get("lock_wait_ms", 0.0)
+            + audit_sub_timings.get("query_prev_ms", 0.0)
+            + audit_sub_timings.get("hash_compute_ms", 0.0)
+            + audit_sub_timings.get("insert_ms", 0.0)
+            + audit_sub_timings.get("checkpoint_ms", 0.0)
+            + commit_duration_ms
+        )
+        stage_timings["relational_persist_ms"] = (t_commit_start - t_rel_start) * 1000.0
+        for sub_k, sub_v in audit_sub_timings.items():
+            stage_timings[f"stage6_{sub_k}"] = sub_v
+
         stage_timings["total_ms"] = (time.perf_counter() - t_pipeline_start) * 1000.0
 
         return ToolCallResponse(

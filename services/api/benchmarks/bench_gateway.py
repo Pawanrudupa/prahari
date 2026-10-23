@@ -52,7 +52,7 @@ def get_benchmark_db_url() -> str:
             url = make_url(base_url)
             # Default to isolated prahari_bench database
             if url.database == "prahari":
-                return str(url.set(database="prahari_bench"))
+                return url.set(database="prahari_bench").render_as_string(hide_password=False)
             return base_url
         except Exception:
             return base_url
@@ -200,6 +200,12 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
         "audit_ms": [],
         "events_ms": [],
         "relational_persist_ms": [],
+        "stage6_lock_wait_ms": [],
+        "stage6_query_prev_ms": [],
+        "stage6_hash_compute_ms": [],
+        "stage6_insert_ms": [],
+        "stage6_commit_ms": [],
+        "stage6_checkpoint_ms": [],
     }
 
     # 2. Warm up (10 requests)
@@ -213,7 +219,8 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
         async with session_maker() as session:
             await execute_gateway_pipeline(session, redis_client, req, active_policy=policy)
 
-    # 3. Measured run (num_requests)
+    # 3. Measured run (sequential num_requests)
+    t_bench_start = time.perf_counter()
     for i in range(num_requests):
         req = ToolCallRequest(
             agent_key=key_info.full_key,
@@ -230,6 +237,39 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
                 for k, v in resp.stage_timings.items():
                     if k in stage_breakdown:
                         stage_breakdown[k].append(v)
+    wall_time_sec = time.perf_counter() - t_bench_start
+    throughput_ops_sec = num_requests / wall_time_sec if wall_time_sec > 0 else 0.0
+
+    # 4. Measured run (20-way concurrent num_requests)
+    concurrent_latencies_ms: list[float] = []
+    concurrent_stage_breakdown: dict[str, list[float]] = {
+        k: [] for k in stage_breakdown
+    }
+    sem = asyncio.Semaphore(20)
+
+    async def _concurrent_worker(req_idx: int) -> None:
+        c_req = ToolCallRequest(
+            agent_key=key_info.full_key,
+            session_id=uuid4(),
+            tool="crm.read_ticket",
+            args={"ticket_id": f"CONC-{req_idx}"},
+        )
+        async with sem, session_maker() as c_session:
+            c_start = time.perf_counter()
+            c_resp = await execute_gateway_pipeline(
+                c_session, redis_client, c_req, active_policy=policy
+            )
+            c_elapsed = (time.perf_counter() - c_start) * 1000.0
+            concurrent_latencies_ms.append(c_elapsed)
+            if c_resp.stage_timings:
+                for k, v in c_resp.stage_timings.items():
+                    if k in concurrent_stage_breakdown:
+                        concurrent_stage_breakdown[k].append(v)
+
+    t_conc_start = time.perf_counter()
+    await asyncio.gather(*[_concurrent_worker(i) for i in range(num_requests)])
+    conc_wall_sec = time.perf_counter() - t_conc_start
+    conc_throughput_ops_sec = num_requests / conc_wall_sec if conc_wall_sec > 0 else 0.0
 
     # Clean up benchmark data on teardown
     if is_postgres:
@@ -266,6 +306,22 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
                 "p95": s_p95,
             }
 
+    c_latencies_sorted = sorted(concurrent_latencies_ms)
+    c_p50 = c_latencies_sorted[int(0.50 * len(c_latencies_sorted))]
+    c_p90 = c_latencies_sorted[int(0.90 * len(c_latencies_sorted))]
+    c_p95 = c_latencies_sorted[int(0.95 * len(c_latencies_sorted))]
+    c_p99 = c_latencies_sorted[int(0.99 * len(c_latencies_sorted))]
+
+    c_stages_summary: dict[str, dict[str, float]] = {}
+    for stage_name, vals in concurrent_stage_breakdown.items():
+        if vals:
+            sorted_v = sorted(vals)
+            c_stages_summary[stage_name] = {
+                "mean": statistics.mean(vals),
+                "p50": sorted_v[int(0.50 * len(sorted_v))],
+                "p95": sorted_v[int(0.95 * len(sorted_v))],
+            }
+
     return {
         "count": float(num_requests),
         "min": min(latencies_ms),
@@ -275,49 +331,99 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
         "p95": latencies_sorted[p95_idx],
         "p99": latencies_sorted[p99_idx],
         "max": max(latencies_ms),
+        "wall_time_sec": wall_time_sec,
+        "throughput_ops_sec": throughput_ops_sec,
         "stages": stages_summary,
+        "concurrent": {
+            "concurrency": 20,
+            "min": min(concurrent_latencies_ms),
+            "mean": statistics.mean(concurrent_latencies_ms),
+            "p50": c_p50,
+            "p90": c_p90,
+            "p95": c_p95,
+            "p99": c_p99,
+            "max": max(concurrent_latencies_ms),
+            "wall_time_sec": conc_wall_sec,
+            "throughput_ops_sec": conc_throughput_ops_sec,
+            "stages": c_stages_summary,
+        },
     }
 
 
 def main() -> None:
-    print("=" * 60)
-    print("Prahari Gateway Pipeline Latency Benchmark (Target: p95 < 50ms)")
-    print("=" * 60)
+    print("=" * 68)
+    print("Prahari Gateway Pipeline Latency & Throughput Benchmark")
+    print("Optimization: Single-Transaction, Reduced Round-trips, App Hashing")
+    print("=" * 68)
 
     results = asyncio.run(run_benchmark(200))
 
-    print(f"Total Requests  : {int(results['count'])}")
-    print(f"Min Latency     : {results['min']:.2f} ms")
-    print(f"Mean Latency    : {results['mean']:.2f} ms")
-    print(f"p50 (Median)    : {results['p50']:.2f} ms")
-    print(f"p90 Latency     : {results['p90']:.2f} ms")
-    print(f"p95 Latency     : {results['p95']:.2f} ms")
-    print(f"p99 Latency     : {results['p99']:.2f} ms")
-    print(f"Max Latency     : {results['max']:.2f} ms")
-    print("-" * 60)
+    print("\n[1] SEQUENTIAL EXECUTION BENCHMARK (N=200)")
+    print(f"Total Requests     : {int(results['count'])}")
+    print(f"Total Wall Time    : {results['wall_time_sec']:.2f} s")
+    print(f"Throughput         : {results['throughput_ops_sec']:.2f} ops/sec")
+    print(f"Min Latency        : {results['min']:.2f} ms")
+    print(f"Mean Latency       : {results['mean']:.2f} ms")
+    print(f"p50 (Median)       : {results['p50']:.2f} ms")
+    print(f"p90 Latency        : {results['p90']:.2f} ms")
+    print(f"p95 Latency        : {results['p95']:.2f} ms")
+    print(f"p99 Latency        : {results['p99']:.2f} ms")
+    print(f"Max Latency        : {results['max']:.2f} ms")
+    print("-" * 68)
 
     stages: dict[str, dict[str, float]] = results.get("stages", {})
     if stages:
-        print("Stage-Level Timing Breakdown:")
-        print(f"  {'Stage':<24} | {'Mean':<10} | {'p50':<10} | {'p95':<10}")
-        print(f"  {'-'*24}-+-{'-'*10}-+-{'-'*10}-+-{'-'*10}")
+        print("Sequential Stage-Level & Stage 6 Sub-Stage Timing Breakdown:")
+        print(f"  {'Stage / Sub-Stage':<28} | {'Mean':<10} | {'p50':<10} | {'p95':<10}")
+        print(f"  {'-'*28}-+-{'-'*10}-+-{'-'*10}-+-{'-'*10}")
         for s_name, s_data in stages.items():
             mean_v = s_data["mean"]
             p50_v = s_data["p50"]
             p95_v = s_data["p95"]
             print(
-                f"  {s_name:<24} | {mean_v:>7.2f} ms | "
+                f"  {s_name:<28} | {mean_v:>7.2f} ms | "
                 f"{p50_v:>7.2f} ms | {p95_v:>7.2f} ms"
             )
-        print("-" * 60)
+        print("-" * 68)
+
+    conc: dict[str, Any] = results.get("concurrent", {})
+    if conc:
+        c_conc = conc["concurrency"]
+        print(f"\n[2] 20-WAY CONCURRENT BENCHMARK (N=200, Concurrency={c_conc})")
+        print(f"Total Requests     : {int(results['count'])}")
+        print(f"Total Wall Time    : {conc['wall_time_sec']:.2f} s")
+        print(f"Throughput         : {conc['throughput_ops_sec']:.2f} ops/sec")
+        print(f"Min Latency        : {conc['min']:.2f} ms")
+        print(f"Mean Latency       : {conc['mean']:.2f} ms")
+        print(f"p50 (Median)       : {conc['p50']:.2f} ms")
+        print(f"p90 Latency        : {conc['p90']:.2f} ms")
+        print(f"p95 Latency        : {conc['p95']:.2f} ms")
+        print(f"p99 Latency        : {conc['p99']:.2f} ms")
+        print(f"Max Latency        : {conc['max']:.2f} ms")
+        print("-" * 68)
+
+        c_stages: dict[str, dict[str, float]] = conc.get("stages", {})
+        if c_stages:
+            print("Concurrent Stage-Level & Stage 6 Sub-Stage Timing Breakdown:")
+            print(f"  {'Stage / Sub-Stage':<28} | {'Mean':<10} | {'p50':<10} | {'p95':<10}")
+            print(f"  {'-'*28}-+-{'-'*10}-+-{'-'*10}-+-{'-'*10}")
+            for s_name, s_data in c_stages.items():
+                mean_v = s_data["mean"]
+                p50_v = s_data["p50"]
+                p95_v = s_data["p95"]
+                print(
+                    f"  {s_name:<28} | {mean_v:>7.2f} ms | "
+                    f"{p50_v:>7.2f} ms | {p95_v:>7.2f} ms"
+                )
+            print("-" * 68)
 
     p95 = results["p95"]
     if p95 < 50.0:
-        print(f"RESULT: PASS - p95 ({p95:.2f} ms) is well within the 50 ms budget!")
-        print("=" * 60)
+        print(f"\nRESULT: PASS - Sequential p95 ({p95:.2f} ms) is within the 50 ms budget!")
+        print("=" * 68)
     else:
-        print(f"RESULT: FAIL - p95 ({p95:.2f} ms) exceeds the 50 ms budget!")
-        print("=" * 60)
+        print(f"\nRESULT: FAIL - Sequential p95 ({p95:.2f} ms) exceeds the 50 ms budget!")
+        print("=" * 68)
         sys.exit(1)
 
 

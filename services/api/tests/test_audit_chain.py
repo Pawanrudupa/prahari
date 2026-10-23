@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 import pytest
+from httpx import AsyncClient
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -298,3 +299,56 @@ async def test_audit_checkpoint_tampered_signature_detected(
     assert res.valid is False
     assert res.error is not None
     assert "signature invalid or tampered" in res.error
+
+
+@pytest.mark.asyncio
+async def test_no_http_route_can_modify_audit_log(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """Security Invariant 4: Audit log is append-only and hash-chained.
+    Assert that no registered HTTP endpoint allows modifying or deleting audit log records,
+    no tamper route exists, and all mutating methods against audit endpoints fail closed.
+    """
+    from app.main import create_app
+
+    app = create_app()
+
+    # 1. Structural inspection of all registered routes
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        methods: set[str] = set(getattr(route, "methods", []))
+        # No route with "audit" or "decision" in the path may allow PUT, PATCH, or DELETE
+        if any(keyword in path.lower() for keyword in ("audit", "decision")):
+            mutation_methods = {"PUT", "PATCH", "DELETE"} & set(methods)
+            assert not mutation_methods, (
+                f"Security violation: route '{path}' exposes mutating method(s) {mutation_methods}."
+            )
+        # No tamper route may exist
+        assert "tamper" not in path.lower(), (
+            f"Security violation: tamper endpoint '{path}' found in registered routes."
+        )
+
+    # 2. Functional request assertions against candidate mutation endpoints
+    tamper_resp = await client.post(
+        "/v1/dev/tamper-audit",
+        json={"tamper_type": "hash"},
+        headers=admin_headers,
+    )
+    assert tamper_resp.status_code == 404
+
+    for method in ("put", "patch", "delete"):
+        caller = getattr(client, method)
+        # Attempt modifying audit endpoints
+        resp_item = await caller("/v1/audit/1", headers=admin_headers)
+        assert resp_item.status_code in (404, 405)
+
+        resp_root = await caller("/v1/audit", headers=admin_headers)
+        assert resp_root.status_code in (404, 405)
+
+        resp_verify = await caller("/v1/audit/verify", headers=admin_headers)
+        assert resp_verify.status_code in (404, 405)
+
+        resp_decision = await caller("/v1/decisions/1", headers=admin_headers)
+        assert resp_decision.status_code in (404, 405)
+

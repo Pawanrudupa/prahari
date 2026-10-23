@@ -16,7 +16,11 @@ export function ConstellationLegend() {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-2xl text-xs font-mono select-none overflow-hidden">
+    <div
+      data-testid="constellation-legend"
+      id="hud-constellation-legend"
+      className="rounded-2xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-2xl text-xs font-mono select-none overflow-hidden"
+    >
       <button
         onClick={() => setIsOpen((prev) => !prev)}
         className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-white/[0.04] transition cursor-pointer text-slate-300"

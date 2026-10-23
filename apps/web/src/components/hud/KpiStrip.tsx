@@ -74,7 +74,11 @@ export function KpiStrip() {
   }, [decisions, pendingApprovalsCount, showStressNodes, agents]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs font-mono select-none">
+    <div
+      data-testid="kpi-strip"
+      id="hud-kpi-strip"
+      className="flex flex-wrap items-center gap-2 text-xs font-mono select-none"
+    >
       {/* Decisions / min */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 bg-slate-900/80 backdrop-blur-md">
         <Zap className="w-3.5 h-3.5 text-cyan-400" />

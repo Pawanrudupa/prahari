@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import hmac
 import json
+import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -112,32 +113,52 @@ async def record_admin_audit_event(
     return await append_audit_log(session, payload)
 
 
-async def append_audit_log(session: AsyncSession, payload: dict[str, Any]) -> AuditLog:
+async def append_audit_log(
+    session: AsyncSession,
+    payload: dict[str, Any],
+    auto_commit: bool = True,
+    timings: dict[str, float] | None = None,
+) -> AuditLog:
     """
     Append an entry to the hash-chained audit log.
 
     Serialized to prevent forks under concurrent gateway requests:
     uses an asyncio lock and PostgreSQL advisory transaction lock.
+    Optimized for minimal database round-trips, single-transaction support,
+    and app-side cryptographic hashing.
     """
+    t_lock_start = time.perf_counter()
     async with _APPEND_LOCK:
         # PostgreSQL advisory xact lock ensures cross-process/multi-worker serialization
         with contextlib.suppress(Exception):
             await session.execute(text("SELECT pg_advisory_xact_lock(740101)"))
+        t_locked = time.perf_counter()
+        if timings is not None:
+            timings["lock_wait_ms"] = (t_locked - t_lock_start) * 1000.0
 
-        # Query latest record
-        stmt = select(AuditLog).order_by(AuditLog.seq.desc()).limit(1)
+        # Query latest record: fetch only seq and hash columns (fewer round-trip bytes)
+        t_query_start = time.perf_counter()
+        stmt = select(AuditLog.seq, AuditLog.hash).order_by(AuditLog.seq.desc()).limit(1)
         result = await session.execute(stmt)
-        latest = result.scalar_one_or_none()
+        latest_row = result.first()
+        t_queried = time.perf_counter()
+        if timings is not None:
+            timings["query_prev_ms"] = (t_queried - t_query_start) * 1000.0
 
-        if latest is None:
+        if latest_row is None:
             seq = 1
             prev_hash = GENESIS_PREV_HASH
         else:
-            seq = latest.seq + 1
-            prev_hash = latest.hash
+            seq = latest_row[0] + 1
+            prev_hash = latest_row[1]
 
+        # In-app cryptographic hash computation (zero DB round-trips)
+        t_hash_start = time.perf_counter()
         canon_payload = canonical_json(payload)
         record_hash = compute_audit_hash(prev_hash, canon_payload)
+        t_hashed = time.perf_counter()
+        if timings is not None:
+            timings["hash_compute_ms"] = (t_hashed - t_hash_start) * 1000.0
 
         entry = AuditLog(
             id=uuid4(),
@@ -147,17 +168,36 @@ async def append_audit_log(session: AsyncSession, payload: dict[str, Any]) -> Au
             payload_json=payload,
         )
 
+        t_insert_start = time.perf_counter()
         session.add(entry)
-        await session.commit()
-        await session.refresh(entry)
+        t_inserted = time.perf_counter()
+        if timings is not None:
+            timings["insert_ms"] = (t_inserted - t_insert_start) * 1000.0
 
         # Automatic checkpoint every N appends per settings
+        t_cp_start = time.perf_counter()
         from app.core.config import settings
 
         interval = settings.AUDIT_CHECKPOINT_INTERVAL
         if interval > 0 and entry.seq % interval == 0:
             with contextlib.suppress(Exception):
-                await create_checkpoint(session)
+                await create_checkpoint(
+                    session,
+                    auto_commit=auto_commit,
+                    head_seq=entry.seq,
+                    head_hash=entry.hash,
+                )
+        t_cp_end = time.perf_counter()
+        if timings is not None:
+            timings["checkpoint_ms"] = (t_cp_end - t_cp_start) * 1000.0
+
+        if auto_commit:
+            t_commit_start = time.perf_counter()
+            await session.commit()
+            t_committed = time.perf_counter()
+            if timings is not None:
+                timings["commit_ms"] = (t_committed - t_commit_start) * 1000.0
+            # Note: No redundant session.refresh()! All fields are already populated in-memory.
 
         return entry
 
@@ -172,27 +212,34 @@ def sign_checkpoint(seq: int, head_hash: str, secret_key: str | None = None) -> 
 
 
 async def create_checkpoint(
-    session: AsyncSession, secret_key: str | None = None
+    session: AsyncSession,
+    secret_key: str | None = None,
+    auto_commit: bool = True,
+    head_seq: int | None = None,
+    head_hash: str | None = None,
 ) -> AuditCheckpoint | None:
     """
     Take an HMAC-signed cryptographic snapshot of the chain head.
     Protects against DB truncation and whole-chain rewriting attacks.
+    Optimized to eliminate redundant queries and round-trips when head is already known.
     """
-    stmt = select(AuditLog).order_by(AuditLog.seq.desc()).limit(1)
-    result = await session.execute(stmt)
-    latest = result.scalar_one_or_none()
+    if head_seq is None or head_hash is None:
+        stmt = select(AuditLog.seq, AuditLog.hash).order_by(AuditLog.seq.desc()).limit(1)
+        result = await session.execute(stmt)
+        latest_row = result.first()
+        if latest_row is None:
+            return None
+        head_seq = latest_row[0]
+        head_hash = latest_row[1]
 
-    if latest is None:
-        return None
-
-    signature = sign_checkpoint(latest.seq, latest.hash, secret_key)
+    signature = sign_checkpoint(head_seq, head_hash, secret_key)
     checkpoint = AuditCheckpoint(
         id=uuid4(),
-        seq=latest.seq,
-        head_hash=latest.hash,
+        seq=head_seq,
+        head_hash=head_hash,
         signature=signature,
     )
     session.add(checkpoint)
-    await session.commit()
-    await session.refresh(checkpoint)
+    if auto_commit:
+        await session.commit()
     return checkpoint

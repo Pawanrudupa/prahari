@@ -12,9 +12,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.session import create_session_token
+from app.models.audit import AuditLog
 from app.models.decision import Approval
 from app.models.policy import Policy, PolicyVersion
 
@@ -598,13 +600,22 @@ limits: []
 
 
 @pytest.mark.asyncio
-async def test_dev_tamper_audit_and_verification_failure(
+async def test_direct_sql_tamper_audit_and_verification_failure(
     client: AsyncClient,
     admin_headers: dict[str, str],
+    db_session: AsyncSession,
 ) -> None:
-    """Verify that tampering an audit row breaks the hash chain and verification
-    reports broken_seq.
+    """Verify that no HTTP route exists to tamper audit logs (POST /v1/dev/tamper-audit is 404),
+    and direct SQL tampering against the test DB is detected with broken_seq by /v1/audit/verify.
     """
+    # 0. Confirm HTTP tamper endpoint does not exist
+    tamper_http = await client.post(
+        "/v1/dev/tamper-audit",
+        json={"tamper_type": "hash"},
+        headers=admin_headers,
+    )
+    assert tamper_http.status_code == 404
+
     # Ensure at least one audit record exists by creating an agent
     await client.post(
         "/v1/agents",
@@ -619,15 +630,13 @@ async def test_dev_tamper_audit_and_verification_failure(
     assert res["valid"] is True
     assert res["records_verified"] >= 1
 
-    # 2. Tamper the audit record
-    tamper_resp = await client.post(
-        "/v1/dev/tamper-audit",
-        json={"tamper_type": "hash"},
-        headers=admin_headers,
-    )
-    assert tamper_resp.status_code == 200
-    tampered_data = tamper_resp.json()
-    tampered_seq = tampered_data["tampered_seq"]
+    # 2. Tamper the audit record directly via test DB SQL helper (never via HTTP)
+    rec = (
+        await db_session.execute(select(AuditLog).order_by(AuditLog.seq.desc()).limit(1))
+    ).scalar_one()
+    tampered_seq = rec.seq
+    rec.hash = "deadbeef" * 8
+    await db_session.commit()
 
     # 3. Verify fails and identifies the broken sequence
     failed_verify = await client.get("/v1/audit/verify", headers=admin_headers)

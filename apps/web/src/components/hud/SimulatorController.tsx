@@ -86,7 +86,11 @@ export function SimulatorController() {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-lg text-xs font-mono select-none">
+    <div
+      data-testid="simulator-bar"
+      id="hud-simulator-bar"
+      className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-xl shadow-lg text-xs font-mono select-none"
+    >
       <span className="text-[11px] text-cyan-400 font-semibold px-2 flex items-center gap-1">
         <Play className="w-3 h-3" />
         <span>SIMULATOR:</span>

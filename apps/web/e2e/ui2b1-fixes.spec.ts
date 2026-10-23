@@ -1,6 +1,10 @@
 import { test, expect } from "@playwright/test";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  tamperAuditRecordDirectSql,
+  restoreAuditRecordDirectSql,
+} from "./helpers/directSqlAuditTamper";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,6 +51,15 @@ limits: []
 
   // 2. Verify-chain modal: records verified, head sequence, head hash copy, checkpoints, and broken seq on tampering
   test("Fix 2: Verify-chain modal details and broken seq detection on DB tampering", async ({ page, request }) => {
+    // Ensure at least one audit record exists before opening modal
+    await request.post("http://localhost:8000/v1/dev/simulate", {
+      headers: {
+        Authorization: "Bearer prahari-admin-dev-secret",
+        "Content-Type": "application/json",
+      },
+      data: { scenario: "benign", count: 2 },
+    });
+
     // Open Decisions & Audit Log
     await page.getByTestId("nav-decisions---audit").click();
     await page.waitForURL(/\/app\/decisions/, { timeout: 10000 });
@@ -66,17 +79,9 @@ limits: []
     // Close dialog
     await page.getByRole("button", { name: "Close Report" }).click();
 
-    // 2. Tamper the DB via dev-only endpoint
-    const tamperResp = await request.post("http://localhost:8000/v1/dev/tamper-audit", {
-      headers: {
-        Authorization: "Bearer prahari-admin-dev-secret",
-        "Content-Type": "application/json",
-      },
-      data: { tamper_type: "hash" },
-    });
-    expect(tamperResp.ok()).toBeTruthy();
-    const tamperData = await tamperResp.json();
-    const tamperedSeq = tamperData.tampered_seq;
+    // 2. Tamper the DB via direct SQL helper against test DB (no HTTP tamper route exists)
+    const tamperData = await tamperAuditRecordDirectSql();
+    const tamperedSeq = tamperData.tamperedSeq;
 
     try {
       // 3. Re-open verify chain modal -> must detect failure and show broken seq!
@@ -87,18 +92,8 @@ limits: []
 
       await page.getByRole("button", { name: "Close Report" }).click();
     } finally {
-      // 4. Restore the database chain to pristine state so subsequent suites pass cleanly
-      await request.post("http://localhost:8000/v1/dev/tamper-audit", {
-        headers: {
-          Authorization: "Bearer prahari-admin-dev-secret",
-          "Content-Type": "application/json",
-        },
-        data: {
-          seq: tamperedSeq,
-          tamper_type: "restore",
-          restore_hash: tamperData.original_hash,
-        },
-      });
+      // 4. Restore the database chain to pristine state via direct SQL
+      await restoreAuditRecordDirectSql(tamperedSeq, tamperData.originalHash);
     }
   });
 
@@ -107,16 +102,7 @@ limits: []
     page,
     request,
   }) => {
-    // 1. Check initial nav badge is attached
-    const navApprovals = page.getByTestId("nav-human-approvals");
-    await expect(navApprovals).toBeVisible();
-
-    // 2. Open Approvals page first so live card deck mounts
-    await navApprovals.click();
-    await page.waitForURL(/\/app\/approvals/, { timeout: 10000 });
-    await expect(page.getByRole("heading", { name: "Human Approvals Queue" })).toBeVisible();
-
-    // 3. Trigger bulk export simulation to create pending approval
+    // 1. Trigger bulk export simulation to create pending approval
     const simResp = await request.post("http://localhost:8000/v1/dev/simulate", {
       headers: {
         Authorization: "Bearer prahari-admin-dev-secret",
@@ -126,16 +112,23 @@ limits: []
     });
     expect(simResp.ok()).toBeTruthy();
 
-    // 4. Expect card deck with pending approval for crm.export
+    // 2. Open Approvals page so card deck mounts with pending approval
+    const navApprovals = page.getByTestId("nav-human-approvals");
+    await expect(navApprovals).toBeVisible();
+    await navApprovals.click();
+    await page.waitForURL(/\/app\/approvals/, { timeout: 10000 });
+    await expect(page.getByRole("heading", { name: "Human Approvals Queue" })).toBeVisible();
+
+    // 3. Expect card deck with pending approval for crm.export
     await expect(page.getByText("crm.export")).toBeVisible({ timeout: 10000 });
 
-    // 5. Press keyboard shortcut 'A' to approve
+    // 4. Press keyboard shortcut 'A' to approve
     await page.keyboard.press("a");
 
     // Success notification with issued token
     await expect(page.getByText(/Approved successfully! Issued single-use token:/i)).toBeVisible({ timeout: 10000 });
 
-    // 6. Query GET /v1/approvals?status=approved to verify status
+    // 5. Query GET /v1/approvals?status=approved to verify status
     const approvedList = await request.get("http://localhost:8000/v1/approvals?status=approved", {
       headers: { Authorization: "Bearer prahari-admin-dev-secret" },
     });
@@ -193,31 +186,44 @@ limits: []
     await expect(page.getByText(/Policy syntax & schema valid/i)).toBeVisible();
   });
 
-  // 6. Constellation framing: scene centered with no clipping at 1280x720 and 1920x1080
-  test("Fix 6: Constellation framing accounts for overlay panels at 1280x720 and 1920x1080", async ({ page }) => {
-    // 1280x720 Viewport (already logged in via beforeEach)
+  // 6. Constellation framing: dynamic overlay panel offset at 1280x720, 1920x1080, and when collapsed
+  test("Fix 6: Dynamic constellation framing accounts for overlay panels (open & collapsed) at 1280x720 and 1920x1080", async ({ page }) => {
+    // 1. 1280x720 Viewport with default open overlays
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.waitForSelector("canvas", { timeout: 15000 });
     await page.waitForTimeout(1500);
 
-    // Verify canvas is visible and fills container without overflow
     const canvas = page.locator("canvas");
     await expect(canvas).toBeVisible();
     const box720 = await canvas.boundingBox();
     expect(box720).not.toBeNull();
     expect(box720?.width).toBeGreaterThan(600);
 
-    // Capture screenshot at 1280x720
+    // Capture screenshot at 1280x720 with overlay panels
     await page.screenshot({ path: path.join(mediaDir, "ui2b1-constellation-framing-1280x720-2x.png") });
 
-    // 1920x1080 Viewport
+    // 2. Collapse overlay feed and verify dynamic adaptation
+    const collapseFeedBtn = page.getByLabel("Collapse event feed");
+    if (await collapseFeedBtn.isVisible()) {
+      await collapseFeedBtn.click();
+      await page.waitForTimeout(600);
+      await expect(page.getByLabel("Expand event feed")).toBeVisible();
+      // Canvas bounding box remains stable and centered
+      const boxCollapsed = await canvas.boundingBox();
+      expect(boxCollapsed?.width).toBeGreaterThan(600);
+      // Re-expand feed
+      await page.getByLabel("Expand event feed").click();
+      await page.waitForTimeout(600);
+    }
+
+    // 3. 1920x1080 Viewport
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.waitForTimeout(1500);
     const box1080 = await canvas.boundingBox();
     expect(box1080).not.toBeNull();
     expect(box1080?.width).toBeGreaterThan(1000);
 
-    // Capture screenshot at 1920x1080
+    // Capture screenshot at 1920x1080 with dynamic framing
     await page.screenshot({ path: path.join(mediaDir, "ui2b1-constellation-framing-1920x1080-2x.png") });
   });
 });

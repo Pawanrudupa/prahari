@@ -1,6 +1,10 @@
 import { test, expect } from "@playwright/test";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  tamperAuditRecordDirectSql,
+  restoreAuditRecordDirectSql,
+} from "./helpers/directSqlAuditTamper";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -152,32 +156,15 @@ test.describe("Record UI-2b.1 Media Clips and Screenshots", () => {
     console.log("Saved screenshot to:", path.join(mediaDir, "ui2b1-admin-events-tab-2x.png"));
 
     // 2. Tampered Verify Chain Modal Screenshot
-    const tamperResp = await request.post("http://localhost:8000/v1/dev/tamper-audit", {
-      headers: {
-        Authorization: "Bearer prahari-admin-dev-secret",
-        "Content-Type": "application/json",
-      },
-      data: { tamper_type: "hash" },
-    });
-    const tamperData = await tamperResp.json();
+    const tamperData = await tamperAuditRecordDirectSql();
 
     await page.getByTestId("verify-chain-btn").click();
     await page.waitForTimeout(1200);
     await page.screenshot({ path: path.join(mediaDir, "ui2b1-verify-chain-tampered-error-2x.png") });
     console.log("Saved screenshot to:", path.join(mediaDir, "ui2b1-verify-chain-tampered-error-2x.png"));
 
-    // Restore pristine state
-    await request.post("http://localhost:8000/v1/dev/tamper-audit", {
-      headers: {
-        Authorization: "Bearer prahari-admin-dev-secret",
-        "Content-Type": "application/json",
-      },
-      data: {
-        seq: tamperData.tampered_seq,
-        tamper_type: "restore",
-        restore_hash: tamperData.original_hash,
-      },
-    });
+    // Restore pristine state via direct SQL
+    await restoreAuditRecordDirectSql(tamperData.tamperedSeq, tamperData.originalHash);
 
     await page.getByRole("button", { name: "Close Report" }).click();
   });
