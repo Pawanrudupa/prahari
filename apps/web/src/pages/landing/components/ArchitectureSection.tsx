@@ -61,7 +61,7 @@ export function ArchitectureSection() {
                 </p>
               </div>
               <div className="mt-4 pt-2 border-t border-cyan-500/20 text-[10px] text-cyan-300 font-semibold leading-relaxed">
-                measured p95 ~23–26 ms (local benchmark, 200 sequential calls, real Postgres + Redis)
+                Uncontended sequential p95 &lt; 50 ms (measured ~30–35 ms, p50 ~24 ms); 20-way concurrent p95 is ~1.2 s due to serialized audit hash-chaining.
               </div>
             </div>
 

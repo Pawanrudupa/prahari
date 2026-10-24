@@ -3,6 +3,11 @@ import pg from "pg";
 const DEFAULT_DB_URL = "postgresql://prahari:prahari@localhost:5432/prahari";
 
 function getConnectionString(): string {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "SECURITY VIOLATION: Direct SQL audit tampering helper cannot be executed in production."
+    );
+  }
   const raw = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || DEFAULT_DB_URL;
   // Convert asyncpg or psycopg prefix to standard postgresql://
   return raw.replace(/^postgresql\+[a-zA-Z0-9_]+:\/\//, "postgresql://");

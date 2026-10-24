@@ -16,6 +16,7 @@ from app.policy.schemas import (
     PolicyDefinition,
     PolicyLimit,
     PolicyRule,
+    RuleSource,
     RuleWhen,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "PolicyLimit",
     "PolicyRule",
     "PolicyValidationError",
+    "RuleSource",
     "RuleWhen",
     "evaluate_policy",
     "load_policy_from_file",

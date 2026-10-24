@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Swords,
   FileText,
+  BookOpen,
 } from "lucide-react";
 import { Tooltip } from "../ui/Tooltip";
 import { useGraphStore } from "../../stores/useGraphStore";
@@ -29,6 +30,7 @@ const ACTIVE_NAV_ITEMS: NavItem[] = [
   { label: "Decisions & Audit", icon: ScrollText, path: "/app/decisions", implemented: true },
   { label: "Human Approvals", icon: UserCheck, path: "/app/approvals", implemented: true },
   { label: "Policy Studio", icon: Scale, path: "/app/policies", implemented: true },
+  { label: "Knowledge Base", icon: BookOpen, path: "/app/knowledge-base", implemented: true },
   { label: "Session DAG", icon: Layers, path: "/app/sessions", implemented: true },
   { label: "Settings", icon: Settings, path: "/app/settings", implemented: true },
 ];

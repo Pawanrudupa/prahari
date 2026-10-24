@@ -4,7 +4,7 @@ from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
@@ -39,17 +39,28 @@ class PolicyDocument(UUIDPrimaryKeyMixin, Base):
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    doc_type: Mapped[str] = mapped_column(String(50), nullable=False, default="markdown")
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum_sha256: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", index=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PolicyChunk(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "policy_chunks"
 
     document_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("policy_documents.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("policy_documents.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    section_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     embedding = mapped_column(Vector(384), nullable=True)
+    tsv = mapped_column(TSVECTOR, nullable=True)
     meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

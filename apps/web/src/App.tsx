@@ -31,6 +31,9 @@ const ApprovalsPage = lazy(() =>
 const PolicyStudioPage = lazy(() =>
   import("./pages/policies/PolicyStudioPage").then((m) => ({ default: m.PolicyStudioPage })),
 );
+const KnowledgeBasePage = lazy(() =>
+  import("./pages/knowledge/KnowledgeBasePage").then((m) => ({ default: m.KnowledgeBasePage })),
+);
 const SessionDagPage = lazy(() =>
   import("./pages/sessions/SessionDagPage").then((m) => ({ default: m.SessionDagPage })),
 );
@@ -81,6 +84,7 @@ function ProtectedAppRoute() {
           <Route path="/decisions" element={<DecisionsPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />
           <Route path="/policies" element={<PolicyStudioPage />} />
+          <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
           <Route path="/sessions" element={<SessionDagPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/app" replace />} />

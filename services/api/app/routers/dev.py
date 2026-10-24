@@ -19,6 +19,8 @@ from app.core.database import get_db
 from app.core.redis import redis_client
 from app.models.agent import Agent
 from app.models.tool import Tool
+from app.rag.service import DuplicateDocumentError, ingest_policy_document, list_policy_documents
+from app.schemas.rag import LoadSampleDocsResponse, PolicyDocumentResponse
 
 # Ensure repository root is on sys.path for services.simulator import
 repo_root = str(Path(__file__).resolve().parents[4])
@@ -241,4 +243,68 @@ async def dev_archive_stress(
         archived_agents=len(agents),
         archived_tools=len(tools),
         message=f"Successfully archived {len(agents)} stress agents and {len(tools)} stress tools.",
+    )
+
+
+@router.post(
+    "/load-sample-docs",
+    response_model=LoadSampleDocsResponse,
+    summary="Load synthetic sample policy documents for RAG evaluation and demo",
+)
+async def dev_load_sample_docs(
+    _: Annotated[str, Depends(require_admin_token)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LoadSampleDocsResponse:
+    """
+    Ingest the 4 canonical synthetic policy documents from policies/examples/docs/.
+    Skips documents that are already loaded.
+    """
+    if settings.ENV not in ("development", "test"):
+        raise HTTPException(status_code=404, detail="Endpoint not found")
+
+    docs_dir = Path(repo_root) / "policies" / "examples" / "docs"
+    if not docs_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"Docs directory not found at {docs_dir}")
+
+    loaded_docs: list[PolicyDocumentResponse] = []
+    skipped_count = 0
+    loaded_count = 0
+
+    for doc_path in sorted(docs_dir.glob("*.md")):
+        content = doc_path.read_bytes()
+        title = doc_path.stem.replace("-", " ").title()
+        filename = doc_path.name
+
+        try:
+            doc = await ingest_policy_document(
+                session=db,
+                title=title,
+                filename=filename,
+                content=content,
+                doc_type="markdown",
+            )
+            loaded_count += 1
+            loaded_docs.append(
+                PolicyDocumentResponse(
+                    id=doc.id,
+                    title=doc.title,
+                    source=doc.source,
+                    doc_type=doc.doc_type,
+                    file_size_bytes=doc.file_size_bytes,
+                    checksum_sha256=doc.checksum_sha256,
+                    status=doc.status,
+                    chunk_count=0,
+                    uploaded_at=doc.uploaded_at,
+                    archived_at=doc.archived_at,
+                )
+            )
+        except DuplicateDocumentError:
+            skipped_count += 1
+            continue
+
+    all_active = await list_policy_documents(session=db, include_archived=False)
+    return LoadSampleDocsResponse(
+        loaded_count=loaded_count,
+        skipped_count=skipped_count,
+        documents=all_active,
     )

@@ -2,7 +2,9 @@
 
 import asyncio
 import contextlib
+import json
 import os
+import sqlite3
 import statistics
 import sys
 import time
@@ -11,17 +13,21 @@ from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import select, text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 
 from app.auth.service import generate_api_key
+from app.core.config import settings
 from app.gateway.pipeline import execute_gateway_pipeline, get_fallback_policy
 from app.gateway.schemas import ToolCallRequest
 from app.models import Base
 from app.models.agent import Agent, AgentToolGrant
 from app.models.tool import Tool
+from app.rag.service import search_policy_corpus
+
+sqlite3.register_adapter(list, json.dumps)
 
 
 # SQLite compatibility for Postgres-specific types during benchmark
@@ -38,6 +44,11 @@ def _compile_vector_sqlite(type_: object, compiler: object, **kw: object) -> str
 @compiles(JSONB, "sqlite")
 def _compile_jsonb_sqlite(type_: object, compiler: object, **kw: object) -> str:
     return "JSON"
+
+
+@compiles(TSVECTOR, "sqlite")
+def _compile_tsvector_sqlite(type_: object, compiler: object, **kw: object) -> str:
+    return "TEXT"
 
 
 def get_benchmark_db_url() -> str:
@@ -130,7 +141,13 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await init_engine.dispose()
 
-        engine = create_async_engine(db_url, echo=False)
+        engine = create_async_engine(
+            db_url,
+            echo=False,
+            pool_size=25,
+            max_overflow=25,
+            pool_timeout=60.0,
+        )
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
@@ -143,7 +160,7 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     # Redis connection if available
-    redis_url = os.environ.get("REDIS_URL")
+    redis_url = os.environ.get("REDIS_URL") or settings.REDIS_URL
     redis_client = None
     if redis_url:
         try:
@@ -271,6 +288,48 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
     conc_wall_sec = time.perf_counter() - t_conc_start
     conc_throughput_ops_sec = num_requests / conc_wall_sec if conc_wall_sec > 0 else 0.0
 
+    # Phase 3: Load-Interference Benchmark (Gateway p95 under concurrent RAG search traffic)
+    # Warm up RAG embedding model and search pipeline to avoid cold-start penalty
+    with contextlib.suppress(Exception):
+        async with session_maker() as rag_session:
+            await search_policy_corpus(
+                rag_session,
+                query="warmup test query",
+                top_k=2,
+            )
+
+    interference_latencies_ms: list[float] = []
+    stop_rag_bg = asyncio.Event()
+
+    async def _rag_background_worker() -> None:
+        while not stop_rag_bg.is_set():
+            with contextlib.suppress(Exception):
+                async with session_maker() as rag_session:
+                    await search_policy_corpus(
+                        rag_session,
+                        query="payment threshold authorization limits",
+                        top_k=3,
+                    )
+            await asyncio.sleep(0.05)
+
+    rag_task = asyncio.create_task(_rag_background_worker())
+    try:
+        for i in range(50):
+            req = ToolCallRequest(
+                agent_key=key_info.full_key,
+                session_id=uuid4(),
+                tool="crm.read_ticket",
+                args={"ticket_id": f"TCK-INTERF-{i}"},
+            )
+            t0 = time.perf_counter()
+            async with session_maker() as s:
+                await execute_gateway_pipeline(s, redis_client, req, active_policy=policy)
+            elapsed = (time.perf_counter() - t0) * 1000.0
+            interference_latencies_ms.append(elapsed)
+    finally:
+        stop_rag_bg.set()
+        await rag_task
+
     # Clean up benchmark data on teardown
     if is_postgres:
         assert_safe_benchmark_database(db_url)
@@ -322,6 +381,10 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
                 "p95": sorted_v[int(0.95 * len(sorted_v))],
             }
 
+    interf_sorted = sorted(interference_latencies_ms) if interference_latencies_ms else [0.0]
+    interf_p50 = interf_sorted[int(0.50 * len(interf_sorted))]
+    interf_p95 = interf_sorted[int(0.95 * len(interf_sorted))]
+
     return {
         "count": float(num_requests),
         "min": min(latencies_ms),
@@ -346,6 +409,16 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
             "wall_time_sec": conc_wall_sec,
             "throughput_ops_sec": conc_throughput_ops_sec,
             "stages": c_stages_summary,
+        },
+        "load_interference": {
+            "count": len(interference_latencies_ms),
+            "mean": (
+                statistics.mean(interference_latencies_ms)
+                if interference_latencies_ms
+                else 0.0
+            ),
+            "p50": interf_p50,
+            "p95": interf_p95,
         },
     }
 
@@ -417,12 +490,29 @@ def main() -> None:
                 )
             print("-" * 68)
 
+    interf: dict[str, Any] = results.get("load_interference", {})
+    if interf:
+        print("\n[3] LOAD-INTERFERENCE BENCHMARK (Sequential Tool Calls + Concurrent RAG Traffic)")
+        print(f"Total Requests     : {int(interf['count'])}")
+        print(f"Mean Latency       : {interf['mean']:.2f} ms")
+        print(f"p50 (Median)       : {interf['p50']:.2f} ms")
+        print(f"p95 Latency        : {interf['p95']:.2f} ms")
+        print("-" * 68)
+
     p95 = results["p95"]
-    if p95 < 50.0:
-        print(f"\nRESULT: PASS - Sequential p95 ({p95:.2f} ms) is within the 50 ms budget!")
+    interf_p95 = interf.get("p95", 0.0) if interf else 0.0
+
+    if p95 < 50.0 and interf_p95 < 50.0:
+        print(
+            f"\nRESULT: PASS - Sequential p95 ({p95:.2f} ms) and Interference p95 "
+            f"({interf_p95:.2f} ms) are within the 50 ms budget!"
+        )
         print("=" * 68)
     else:
-        print(f"\nRESULT: FAIL - Sequential p95 ({p95:.2f} ms) exceeds the 50 ms budget!")
+        print(
+            f"\nRESULT: FAIL - Sequential p95 ({p95:.2f} ms) or Interference p95 "
+            f"({interf_p95:.2f} ms) exceeded the 50 ms budget!"
+        )
         print("=" * 68)
         sys.exit(1)
 

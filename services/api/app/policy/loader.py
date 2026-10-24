@@ -46,6 +46,13 @@ def validate_policy_logic(policy: PolicyDefinition) -> None:
                 f"Rule '{rule.id}' with effect 'redact' must specify non-empty 'redact' list"
             )
 
+        if rule.sources:
+            for s_idx, src in enumerate(rule.sources):
+                if not src.document.strip():
+                    errors.append(f"Rule '{rule.id}' source #{s_idx + 1} has empty document")
+                if not src.section.strip():
+                    errors.append(f"Rule '{rule.id}' source #{s_idx + 1} has empty section")
+
     seen_limit_ids: set[str] = set()
     for limit in policy.limits:
         if limit.id in seen_limit_ids:

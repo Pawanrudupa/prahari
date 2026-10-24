@@ -13,6 +13,9 @@ dependencies = [
     "alembic>=1.14.0",
     "pgvector>=0.3.6",
     "redis[hiredis]>=5.2.0",
+    "fastembed>=0.4.0",
+    "pypdf>=5.0.0",
+    "python-multipart>=0.0.18",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +49,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "A", "T20", "SIM"]
 "benchmarks/*" = ["T201"]
 "**/*simulator*/**" = ["T201"]
 "**/cli.py" = ["T201"]
+"evals/*" = ["T201", "E402"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -55,7 +59,7 @@ mypy_path = ["../..", "."]
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-module = ["redis.*", "pgvector.*", "yaml.*"]
+module = ["redis.*", "pgvector.*", "yaml.*", "fastembed.*", "pypdf.*"]
 ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]

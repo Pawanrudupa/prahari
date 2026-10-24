@@ -390,3 +390,73 @@ rules: []
 """
     with pytest.raises(PolicyValidationError, match="defaults.decision must strictly be 'deny'"):
         load_policy_from_yaml(yaml_bad_default)
+
+
+def test_policy_rule_sources_and_description() -> None:
+    """
+    Verify optional description and sources are loaded and validated
+    without impacting decisions.
+    """
+    yaml_with_sources = """
+policy: grounded-guard
+version: 1
+defaults:
+  decision: deny
+rules:
+  - id: rule-grounded
+    effect: allow
+    description: "Allow internal support query"
+    sources:
+      - document: "data-handling-policy.md"
+        section: "Section 3.1 Data Classification"
+    agent:
+      role: support
+    tool: query_user
+"""
+    policy = load_policy_from_yaml(yaml_with_sources)
+    assert len(policy.rules) == 1
+    rule = policy.rules[0]
+    assert rule.description == "Allow internal support query"
+    assert rule.sources is not None
+    assert len(rule.sources) == 1
+    assert rule.sources[0].document == "data-handling-policy.md"
+    assert rule.sources[0].section == "Section 3.1 Data Classification"
+
+    # Evaluation should be normal allow
+    ctx = EvaluationContext(agent_role="support", tool="query_user")
+    decision = evaluate_policy(policy, ctx)
+    assert decision.outcome == "allow"
+    assert decision.rule_id == "rule-grounded"
+
+
+def test_policy_rule_sources_validation_errors() -> None:
+    """Verify empty document or section in sources raises PolicyValidationError."""
+    yaml_empty_doc = """
+policy: bad-sources
+version: 1
+defaults:
+  decision: deny
+rules:
+  - id: rule-1
+    effect: allow
+    sources:
+      - document: "  "
+        section: "Sec 1"
+"""
+    with pytest.raises(PolicyValidationError, match="source #1 has empty document"):
+        load_policy_from_yaml(yaml_empty_doc)
+
+    yaml_empty_sec = """
+policy: bad-sources-2
+version: 1
+defaults:
+  decision: deny
+rules:
+  - id: rule-1
+    effect: allow
+    sources:
+      - document: "data.md"
+        section: ""
+"""
+    with pytest.raises(PolicyValidationError, match="source #1 has empty section"):
+        load_policy_from_yaml(yaml_empty_sec)

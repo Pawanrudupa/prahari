@@ -3,6 +3,7 @@ from sqlalchemy import text
 
 from app.core.database import engine
 from app.core.redis import redis_client
+from app.rag.embeddings import is_rag_ready
 from app.schemas.health import HealthResponse
 
 router = APIRouter(tags=["health"])
@@ -31,4 +32,5 @@ async def health_check() -> HealthResponse:
         version="0.1.0",
         db=db_ok,
         redis=redis_ok,
+        rag_ready=is_rag_ready(),
     )

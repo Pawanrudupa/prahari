@@ -20,6 +20,7 @@ from app.routers import (
     graph,
     health,
     policies,
+    rag,
     sessions,
     tools,
 )
@@ -83,6 +84,7 @@ def create_app(enable_lifespan: bool = True) -> FastAPI:
     app.include_router(approvals.router)
     app.include_router(approvals.gateway_approvals_router)
     app.include_router(policies.router)
+    app.include_router(rag.router)
     app.include_router(sessions.router)
     app.include_router(ws_router)
     app.include_router(dev.router)

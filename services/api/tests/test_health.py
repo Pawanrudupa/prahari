@@ -21,3 +21,4 @@ async def test_health_matches_schema(client: AsyncClient) -> None:
     assert health.status == "ok"
     assert isinstance(health.db, bool)
     assert isinstance(health.redis, bool)
+    assert isinstance(health.rag_ready, bool)

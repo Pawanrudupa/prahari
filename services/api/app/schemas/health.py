@@ -6,3 +6,4 @@ class HealthResponse(BaseModel):
     version: str
     db: bool
     redis: bool
+    rag_ready: bool = False

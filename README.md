@@ -70,7 +70,16 @@ pnpm --filter @prahari/web dev
   - Serialized via PostgreSQL transaction advisory locks (`pg_advisory_xact_lock`) ensuring 0 forks under concurrent requests.
   - Periodic HMAC-SHA256 signed checkpoints (`POST /v1/audit/checkpoint`) protect against database tail truncation and whole-chain rewriting attacks.
   - Zero raw PII/secrets stored: only argument hashes (`args_hash`) and detected data-class labels are retained.
-- **Throughput & Concurrency**: The global advisory lock serializes audit appends sequentially. For MVP, write latency benchmarks achieve p95 = ~13 ms (budget: 50 ms). Multi-tenant sharding is planned for multi-org scale.
+- **Throughput & Concurrency Latency Profile**:
+  - **Uncontended Sequential Execution**: Measured $p50 \approx 24.1\text{ ms}$, $p95 \approx 30.5\text{--}34.6\text{ ms}$ (comfortably within the $50\text{ ms}$ target budget). Full accounting of the sequential $p50 \approx 24\text{ ms}$:
+    - Step 1 (Token Authentication & SHA-256 Digest Comparison): $\sim 3.1\text{ ms}$
+    - Step 2b (Capability Grants Database Check): $\sim 1.7\text{ ms}$
+    - Steps 3–5 (Heuristic Stubs, In-Memory Policy Evaluation, Redis Rate Limits): $\sim 1.5\text{ ms}$
+    - Step 8b (Relational Session/Action/Decision Mapping & Sequence Query): $\sim 4.0\text{ ms}$
+    - Step 9 (Best-Effort Async Event Emission to Redis Pub/Sub): $\sim 1.3\text{ ms}$
+    - Step 6/8 (Atomic Audit Append & Transaction Commit): $\sim 12.1\text{ ms}$ (`lock_wait` $\sim 1.4\text{ ms}$, `query_prev` $\sim 1.7\text{ ms}$, in-app SHA-256 $\sim 0.05\text{ ms}$, `insert` $\sim 0.04\text{ ms}$, single atomic `commit` $\sim 8.0\text{ ms}$)
+    - Total: $\sim 3.1 + 1.7 + 1.5 + 4.0 + 1.3 + 12.1 \approx 23.7\text{ ms} \approx 24\text{ ms}$.
+  - **20-Way Concurrent Execution**: Measured $p50 \approx 361\text{ ms}$, $p95 \approx 1.23\text{ s}$ ($\sim 41.9\text{ ops/sec}$ throughput). This elevated latency under concurrent contention is intentional: the PostgreSQL transactional advisory lock (`pg_advisory_xact_lock(740101)`) queues transactions sequentially to guarantee zero forks and strict monotonic linear ordering across all workers. Single-chain throughput is capped at $\sim 40\text{--}42\text{ ops/sec}$ per instance with full WAL durability. Multi-tenant sharded partition chains are planned for multi-org horizontal scaling.
 - **Limits & Degraded Mode**: Rate limits (calls/min), runaway loop braking (repeated identical call signatures), and daily INR spend caps run in Redis. If Redis is unavailable, Prahari can fail closed (`LIMITS_FAIL_CLOSED=true`) or run in degraded in-memory mode, emitting explicit `limits.degraded` audit events.
 - **Detector Stubs**: Phase 1 includes heuristic scanners (`app/stubs/`) for prompt injection and PII to validate pipeline contracts and integration tests. Full ML models (scikit-learn Isolation Forest, BERT injection classifier) and DPDP modules are scheduled for Phases 3 and 5.
 

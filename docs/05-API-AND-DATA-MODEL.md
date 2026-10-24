@@ -6,8 +6,8 @@
 - `agent_tool_grants(agent_id, tool_id)`
 - `policies(id, name, status, active_version_id)`
 - `policy_versions(id, policy_id, version, yaml, created_by, created_at)`
-- `policy_documents(id, title, source, uploaded_at)`
-- `policy_chunks(id, document_id, text, embedding vector, meta jsonb)`
+- `policy_documents(id, title, source, doc_type, file_size_bytes, checksum_sha256, status, uploaded_at, archived_at)`
+- `policy_chunks(id, document_id, chunk_index, section_title, text, checksum_sha256, embedding vector(384), tsv tsvector, meta jsonb)`
 - `sessions(id, agent_id, goal, started_at, ended_at)`
 - `actions(id, session_id, seq, tool_id, args_json, purpose, data_classes text[], parent_action_id, created_at)`  # parent gives the workflow DAG
 - `decisions(id, action_id, outcome, rule_id, policy_version_id, reason, risk_score, injection_score, latency_ms, created_at)`
@@ -28,6 +28,10 @@ rules:
     effect: allow
     agent: { role: support }
     tool: crm.read_ticket
+    description: "Support agents can read customer support tickets."
+    sources:
+      - document: "data-handling-policy.md"
+        section: "3.2 Customer Support Systems"
   - id: R2-redact-pii-outbound
     effect: redact
     tool: email.send
@@ -49,6 +53,7 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `agent_tool_grants(agent_id, tool_id)`: **ENFORCED** at gateway Step 2b. Strict default-deny semantics: **"No grants = no tools"**. Every agent starts with zero tool access. If an agent attempts to call any tool not explicitly granted via `agent_tool_grants`, the gateway immediately rejects it with `decision: deny` and `reason: tool_not_granted`.
 
 ## REST endpoints (v1)
+- `GET /health` -> `{status, version, db, redis, rag_ready}` (system and service readiness probe)
 - `POST /v1/auth/login` body `{admin_token}` -> `{session_token, token_type, expires_in, mode}` (exchanges admin secret for browser session token; admin secret is never exposed in browser)
 - `GET /v1/auth/dev-session` -> `{session_token, mode: "development-bypass"}` (development-only bypass, rejected in production with HTTP 404)
 - `POST /v1/auth/ws-ticket` (admin or session auth) -> `{ticket, expires_in}` (mints a single-use, 30-second ticket for WebSocket connection; prevents token exposure in URLs and access logs)
@@ -63,8 +68,13 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `GET /v1/graph/snapshot` -> `{latest_audit_seq, agents, tools, grants, recent_decisions}` (for 3D constellation initial load & subscribe-then-snapshot deduplication; excludes stress nodes by default)
 - `GET/POST /v1/policies`, `POST /v1/policies/validate` (dry-run YAML syntax/schema check), `POST /v1/policies/test` (sample inputs against policy rules), `POST /v1/policies/{id}/versions`, `POST /v1/policies/{id}/activate`, `POST /v1/policies/{id}/rollback` (one-click rollback to prior version; audited)
 - `POST /v1/policies/author` body `{instruction}` -> draft YAML + generated test cases
-- `POST /v1/documents` (upload policy doc), `GET /v1/documents`
-- `GET /v1/decisions/{id}/explain` -> `{summary, clauses:[{doc,chunk,score}], rule_id}`
+- `POST /v1/rag/documents` (multipart upload; 5 MB streaming cap, max 50 pages, max 100k chars; markdown/text/pdf; strips control & zero-width chars; computes SHA-256; generates 384-d BGE-small embeddings and GIN-indexed tsvector)
+- `GET /v1/rag/documents?include_archived=false` (list policy documents with chunk counts)
+- `GET /v1/rag/documents/{id}/chunks` (fetch chunks for a policy document)
+- `POST /v1/rag/documents/{id}/archive` (soft-archive policy document: sets `status='archived'`; emits audit event)
+- `POST /v1/rag/search` body `{query, top_k?, vector_threshold?, lexical_threshold?}` -> `{results, query_time_ms, count, retrieval_mode}` (hybrid retrieval: pgvector cosine similarity + Postgres full-text search with RRF and absolute threshold calibration)
+- `POST /v1/dev/load-sample-docs` (dev/admin helper to seed sample fictional policies from `policies/examples/docs/`)
+- `GET /v1/decisions/{id}/explain` -> `{summary, clauses:[{doc,chunk,score}], rule_id}` (Phase 4 Milestone 4b)
 - `GET /v1/sessions` (list sessions with goal, agent, timestamps, action counts) and `GET /v1/sessions/{id}/graph` -> DAG nodes/edges with causal parent-child actions for the 3D workflow view
 - `GET /v1/approvals?status=pending|approved|denied|expired` (approver/admin), `GET /v1/approvals/{id}` (approver/admin), `POST /v1/approvals/{id}/decide` body `{decision: "approve"|"deny", note?: string}` -> `{id, decision_id, status, approver, decided_at, note, approval_token, approval_token_expires_at}` (mints single-use 5-min token; audited)
 - `GET /v1/gateway/approvals/{id}` (agent polling endpoint; returns `{id, status, approval_token}`)
@@ -146,8 +156,19 @@ Measured stage-level profile breakdown (local execution, single-transaction opti
   - `insert_ms`: $p50 \approx 0.04\text{ ms}$, $p95 \approx 0.07\text{ ms}$
   - `checkpoint_ms`: $p50 \approx 0.01\text{ ms}$, $p95 \approx 0.02\text{ ms}$
   - `commit_ms`: $p50 \approx 7.99\text{ ms}$, $p95 \approx 12.46\text{ ms}$ (single commit combining audit log, relational decisions/actions, and checkpoints)
-- **Relational Persistence Preparation**: ~3.9–4.1 ms
-- **Measured Gateway Total**: Sequential $p50 \approx 24.08\text{ ms}$, $p95 \approx 34.56\text{ ms}$, $p99 \approx 36.84\text{ ms}$ (comfortably within the 50 ms budget).
+- **Relational Persistence Preparation (Step 8b)**: ~3.9–4.1 ms (`SELECT count(Action.id)` session sequence count + SQLAlchemy object mapping)
+- **Event Bus Emission (Step 9)**: ~1.3–1.7 ms (best-effort async event publishing to Redis pub/sub)
+- **Full Accounting of Sequential $p50 \approx 24\text{ ms}$**:
+  - Step 1 (Token Auth): $\sim 3.1\text{ ms}$
+  - Step 2b (Capability Grants DB Check): $\sim 1.7\text{ ms}$
+  - Steps 3–5 (Stubs, Policy Evaluation, Redis Limits): $\sim 1.5\text{ ms}$
+  - Step 8b (Relational Prep): $\sim 4.0\text{ ms}$
+  - Step 9 (Redis Pub/Sub Event): $\sim 1.3\text{ ms}$
+  - Step 6/8 (Atomic Audit Append & Transaction Commit): $\sim 12.1\text{ ms}$ (`lock_wait` $\sim 1.4\text{ ms}$, `query_prev` $\sim 1.7\text{ ms}$, in-app SHA-256 $\sim 0.05\text{ ms}$, `insert` $\sim 0.04\text{ ms}$, single atomic `commit` $\sim 8.0\text{ ms}$)
+  - Total: $\sim 3.1 + 1.7 + 1.5 + 4.0 + 1.3 + 12.1 \approx 23.7\text{ ms} \approx 24\text{ ms}$.
+- **Measured Gateway Total**:
+  - **Uncontended Sequential Execution**: $p50 \approx 24.08\text{ ms}$, $p95 \approx 30.45\text{--}34.56\text{ ms}$, $p99 \approx 36.84\text{ ms}$ (comfortably within the 50 ms budget).
+  - **20-Way Concurrent Execution**: $p50 \approx 361\text{ ms}$, $p95 \approx 1.23\text{ s}$ ($\sim 41.9\text{ ops/sec}$ throughput). The elevated latency under concurrency is intentional: transactions queue on PostgreSQL advisory lock `pg_advisory_xact_lock(740101)` ($p50\text{ wait} \approx 240.56\text{ ms}$) to ensure zero forks and strictly monotonic linear sequencing.
 
 ## Known Limits & Architectural Constraints
 1. **Checkpoint Truncation Detection Window**:
@@ -157,7 +178,7 @@ Measured stage-level profile breakdown (local execution, single-transaction opti
 2. **Single-Chain Advisory Lock Sequencer & Throughput Bound**:
    - Audit log append sequencing uses a PostgreSQL transactional advisory lock (`pg_advisory_xact_lock(740101)`).
    - Guarantees strict monotonic linear sequence numbers with zero forks under concurrent load.
-   - **Throughput Limit**: Measured single-chain throughput is capped at ~40–42 operations/second on PostgreSQL with WAL commit durability (sequential: 39.32 ops/sec; 20-way concurrent: 41.90 ops/sec, where concurrency queues on the transaction lock with $p50\text{ wait}\approx 240.56\text{ ms}$). To scale write throughput beyond ~50 ops/sec per instance in future phases, the architecture would migrate to tenant-partitioned hash chains or merkleized batch commitments.
+   - **Throughput Limit**: Measured single-chain throughput is capped at ~40–42 operations/second on PostgreSQL with WAL commit durability (sequential: 39.32 ops/sec; 20-way concurrent: 41.90 ops/sec, where concurrency queues on the transaction lock with $p50\text{ wait}\approx 240.56\text{ ms}$, $p95 \approx 1.23\text{ s}$). To scale write throughput beyond ~50 ops/sec per instance in future phases, the architecture would migrate to tenant-partitioned hash chains or merkleized batch commitments.
 3. **Production Startup Secret Guard**:
    - Server refuses startup if default placeholder secrets (`ADMIN_TOKEN`, `AUDIT_HMAC_KEY`, `SESSION_SECRET_KEY`) are detected outside `ENV=development`.
 4. **Database Connection Pool Sizing Constraint**:

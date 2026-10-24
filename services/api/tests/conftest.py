@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 
@@ -59,6 +59,11 @@ def _compile_vector_sqlite(type_: Any, compiler: Any, **kw: Any) -> str:
 @compiles(JSONB, "sqlite")
 def _compile_jsonb_sqlite(type_: Any, compiler: Any, **kw: Any) -> str:
     return "JSON"
+
+
+@compiles(TSVECTOR, "sqlite")
+def _compile_tsvector_sqlite(type_: Any, compiler: Any, **kw: Any) -> str:
+    return "TEXT"
 
 
 TABLES_TO_TRUNCATE = [

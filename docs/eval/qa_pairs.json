@@ -1,0 +1,317 @@
+[
+  {
+    "id": "qa-dev-001",
+    "split": "dev",
+    "query": "What is the maximum single-transaction limit for an automated payment agent?",
+    "in_scope": true,
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 2.1 Single-Transaction Limits",
+    "expected_text_contains": "INR 10,000"
+  },
+  {
+    "id": "qa-dev-002",
+    "split": "dev",
+    "query": "When is dual-authorization escalation triggered for financial transfers?",
+    "in_scope": true,
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 2.2 Dual-Authorization Escalation Threshold",
+    "expected_text_contains": "INR 50,000"
+  },
+  {
+    "id": "qa-dev-003",
+    "split": "dev",
+    "query": "What is the daily cumulative spend cap for an autonomous agent?",
+    "in_scope": true,
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 3.1 Cumulative Daily Spend Cap",
+    "expected_text_contains": "INR 250,000"
+  },
+  {
+    "id": "qa-dev-004",
+    "split": "dev",
+    "query": "Are autonomous agents allowed to process raw credit card numbers or CVV codes?",
+    "in_scope": true,
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 4.1 Cardholder Data Exclusion",
+    "expected_text_contains": "PAN"
+  },
+  {
+    "id": "qa-dev-005",
+    "split": "dev",
+    "query": "How many customer rows can an agent export before requiring supervisor escalation?",
+    "in_scope": true,
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 3.2 Bulk Data Export Prohibitions",
+    "expected_text_contains": "100 rows"
+  },
+  {
+    "id": "qa-dev-006",
+    "split": "dev",
+    "query": "How should national identity identifiers and email addresses be masked?",
+    "in_scope": true,
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 3.1 Masking of Personal Identifiers",
+    "expected_text_contains": "final 4 digits"
+  },
+  {
+    "id": "qa-dev-007",
+    "split": "dev",
+    "query": "Can customer plaintext secrets or passwords be stored in application telemetry logs?",
+    "in_scope": true,
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 4.2 Logging Sanitation",
+    "expected_text_contains": "never be written"
+  },
+  {
+    "id": "qa-dev-008",
+    "split": "dev",
+    "query": "What are the four data classification tiers defined in the data handling standard?",
+    "in_scope": true,
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 2 Data Classification Framework",
+    "expected_text_contains": "Public"
+  },
+  {
+    "id": "qa-dev-009",
+    "split": "dev",
+    "query": "What operations is an agent in the Support role permitted to execute?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 2.1 Agent Role Categorization",
+    "expected_text_contains": "Read-only lookup"
+  },
+  {
+    "id": "qa-dev-010",
+    "split": "dev",
+    "query": "What is the maximum lifespan of an agent session bearer token?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 3.1 Ephemeral Session Tokens",
+    "expected_text_contains": "60 minutes"
+  },
+  {
+    "id": "qa-dev-011",
+    "split": "dev",
+    "query": "Can an agent invoke a gateway tool without an active capability grant?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 2.2 Capability Grants and Granular Tools",
+    "expected_text_contains": "CapabilityGrant"
+  },
+  {
+    "id": "qa-dev-012",
+    "split": "dev",
+    "query": "Within how many minutes must agents stop processing data after consent withdrawal?",
+    "in_scope": true,
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 3.1 Unconditional Right of Withdrawal",
+    "expected_text_contains": "15 minutes"
+  },
+  {
+    "id": "qa-dev-013",
+    "split": "dev",
+    "query": "Can customer personal data collected for support be reused for general model training?",
+    "in_scope": true,
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 2.1 Explicit Purpose Binding",
+    "expected_text_contains": "secondary purposes"
+  },
+  {
+    "id": "qa-dev-014",
+    "split": "dev",
+    "query": "What is the corporate tax deduction rate for R&D centers located in Bengaluru?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-015",
+    "split": "dev",
+    "query": "How do you configure an Istio service mesh ingress gateway for gRPC traffic?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-test-016",
+    "split": "test",
+    "query": "What is the burst velocity limit for consecutive payment disbursements?",
+    "in_scope": true,
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 3.2 Burst Velocity Restrictions",
+    "expected_text_contains": "5 consecutive payment"
+  },
+  {
+    "id": "qa-test-017",
+    "split": "test",
+    "query": "What approval is required for autonomous customer refunds greater than INR 5,000?",
+    "in_scope": true,
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 4.2 Reversal and Refund Authorization",
+    "expected_text_contains": "supervisor sign-off"
+  },
+  {
+    "id": "qa-test-018",
+    "split": "test",
+    "query": "Can tier 1 support representatives execute direct payment charge reversals?",
+    "in_scope": true,
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 4.2 Reversal and Refund Authorization",
+    "expected_text_contains": "tier-1 customer support"
+  },
+  {
+    "id": "qa-test-019",
+    "split": "test",
+    "query": "Are agents allowed to persist decrypted customer attributes in local disk caches?",
+    "in_scope": true,
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 4.1 Ephemeral Processing",
+    "expected_text_contains": "no long-term persistence"
+  },
+  {
+    "id": "qa-test-020",
+    "split": "test",
+    "query": "What data sensitivity class includes customer phone numbers and financial instruments?",
+    "in_scope": true,
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 2 Data Classification Framework",
+    "expected_text_contains": "Restricted (PII)"
+  },
+  {
+    "id": "qa-test-021",
+    "split": "test",
+    "query": "How should masked phone numbers be formatted when displayed by support agents?",
+    "in_scope": true,
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 3.1 Masking of Personal Identifiers",
+    "expected_text_contains": "terminal two digits"
+  },
+  {
+    "id": "qa-test-022",
+    "split": "test",
+    "query": "What permissions are assigned to the Auditor operational agent role?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 2.1 Agent Role Categorization",
+    "expected_text_contains": "Read-only oversight"
+  },
+  {
+    "id": "qa-test-023",
+    "split": "test",
+    "query": "Is the Admin agent role authorized for direct extraction of customer records?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 2.1 Agent Role Categorization",
+    "expected_text_contains": "Not authorized"
+  },
+  {
+    "id": "qa-test-024",
+    "split": "test",
+    "query": "How many administrative principals are required to sign off on production policy modifications?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 4.1 Multi-Party Sign-Off",
+    "expected_text_contains": "two authorized"
+  },
+  {
+    "id": "qa-test-025",
+    "split": "test",
+    "query": "What emergency authority do security officers hold regarding rogue or compromised agents?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 4.2 Emergency Revocation",
+    "expected_text_contains": "unilateral authority"
+  },
+  {
+    "id": "qa-test-026",
+    "split": "test",
+    "query": "What happens if an agent attempts to echo private API keys or database passwords in tool args?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 3.2 Credential Non-Disclosure",
+    "expected_text_contains": "security denial"
+  },
+  {
+    "id": "qa-test-027",
+    "split": "test",
+    "query": "Where must every consent grant, modification, and revocation event be recorded?",
+    "in_scope": true,
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 4.1 Immutable Consent Logging",
+    "expected_text_contains": "hash-chained audit log"
+  },
+  {
+    "id": "qa-test-028",
+    "split": "test",
+    "query": "What are the rules regarding data erasure obligations when a customer revokes consent?",
+    "in_scope": true,
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 3.2 Post-Withdrawal Erasure Obligations",
+    "expected_text_contains": "marked for deletion"
+  },
+  {
+    "id": "qa-test-029",
+    "split": "test",
+    "query": "What safeguards apply when transferring customer records across geographical boundary zones?",
+    "in_scope": true,
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 4.2 Cross-Border Processing Safeguards",
+    "expected_text_contains": "equivalent encryption"
+  },
+  {
+    "id": "qa-test-030",
+    "split": "test",
+    "query": "What are the three explicit categories required in granular consent records?",
+    "in_scope": true,
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 2.2 Granular Consent Categories",
+    "expected_text_contains": "Fraud monitoring"
+  },
+  {
+    "id": "qa-test-031",
+    "split": "test",
+    "query": "What is the recommended dosage for paracetamol in pediatric patients?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-test-032",
+    "split": "test",
+    "query": "How many teams qualify for the ICC Cricket World Cup knockout stage?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-test-033",
+    "split": "test",
+    "query": "What is the formula to calculate option Greeks using Black-Scholes PDE?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-test-034",
+    "split": "test",
+    "query": "How do you repair a leaky kitchen faucet with ceramic disc cartridges?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-test-035",
+    "split": "test",
+    "query": "What are the traffic violation fines for exceeding 100 km/h on National Highway 44?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  }
+]

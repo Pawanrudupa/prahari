@@ -28,6 +28,15 @@ class RuleWhen(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class RuleSource(BaseModel):
+    """Declared grounding source citation for a policy rule."""
+
+    document: str
+    section: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class PolicyRule(BaseModel):
     """A single rule in a policy."""
 
@@ -37,6 +46,8 @@ class PolicyRule(BaseModel):
     tool: str | None = None
     when: RuleWhen | None = None
     redact: list[str] | None = None
+    description: str | None = None
+    sources: list[RuleSource] | None = None
 
     model_config = ConfigDict(extra="forbid")
 
