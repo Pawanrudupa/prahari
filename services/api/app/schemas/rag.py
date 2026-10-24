@@ -6,6 +6,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.rag.constants import (
+    DEFAULT_TAU_LEXICAL,
+    DEFAULT_TAU_VECTOR,
+    DEFAULT_TEXT_WEIGHT,
+    DEFAULT_VECTOR_WEIGHT,
+)
+
 
 class PolicyDocumentResponse(BaseModel):
     id: UUID
@@ -34,10 +41,10 @@ class PolicyChunkResponse(BaseModel):
 class RAGSearchRequest(BaseModel):
     query: str = Field(..., min_length=2, max_length=1000)
     top_k: int = Field(default=5, ge=1, le=20)
-    tau_vector: float = Field(default=0.65, ge=0.0, le=1.0)
-    tau_lexical: float = Field(default=0.05, ge=0.0, le=10.0)
-    vector_weight: float = Field(default=0.7, ge=0.0, le=1.0)
-    text_weight: float = Field(default=0.3, ge=0.0, le=1.0)
+    tau_vector: float = Field(default=DEFAULT_TAU_VECTOR, ge=0.0, le=1.0)
+    tau_lexical: float = Field(default=DEFAULT_TAU_LEXICAL, ge=0.0, le=10.0)
+    vector_weight: float = Field(default=DEFAULT_VECTOR_WEIGHT, ge=0.0, le=10.0)
+    text_weight: float = Field(default=DEFAULT_TEXT_WEIGHT, ge=0.0, le=10.0)
 
 
 class RAGSearchResultItem(BaseModel):

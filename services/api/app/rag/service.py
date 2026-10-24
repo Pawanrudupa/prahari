@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -13,10 +14,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.service import append_audit_log
 from app.models.policy import PolicyChunk, PolicyDocument
 from app.rag.chunker import chunk_document
+from app.rag.constants import (
+    CANDIDATE_POOL_MULTIPLIER,
+    DEFAULT_TAU_LEXICAL,
+    DEFAULT_TAU_VECTOR,
+    DEFAULT_TEXT_WEIGHT,
+    DEFAULT_VECTOR_WEIGHT,
+    RRF_K,
+)
 from app.rag.embeddings import embed_query, embed_texts
 from app.rag.extractor import (
     MAX_FILE_SIZE_BYTES,
     compute_sha256,
+    extract_banner_and_clean_text,
     extract_markdown,
     extract_pdf,
 )
@@ -27,6 +37,196 @@ from app.schemas.rag import (
 )
 
 logger = logging.getLogger("prahari.rag.service")
+
+ENGLISH_STOPWORDS = {
+    "a",
+    "about",
+    "above",
+    "after",
+    "again",
+    "against",
+    "all",
+    "am",
+    "an",
+    "and",
+    "any",
+    "are",
+    "aren't",
+    "as",
+    "at",
+    "be",
+    "because",
+    "been",
+    "before",
+    "being",
+    "below",
+    "between",
+    "both",
+    "but",
+    "by",
+    "can",
+    "can't",
+    "cannot",
+    "could",
+    "couldn't",
+    "did",
+    "didn't",
+    "do",
+    "does",
+    "doesn't",
+    "doing",
+    "don't",
+    "down",
+    "during",
+    "each",
+    "few",
+    "for",
+    "from",
+    "further",
+    "had",
+    "hadn't",
+    "has",
+    "hasn't",
+    "have",
+    "haven't",
+    "having",
+    "he",
+    "he'd",
+    "he'll",
+    "he's",
+    "her",
+    "here",
+    "here's",
+    "hers",
+    "herself",
+    "him",
+    "himself",
+    "his",
+    "how",
+    "how's",
+    "i",
+    "i'd",
+    "i'll",
+    "i'm",
+    "i've",
+    "if",
+    "in",
+    "into",
+    "is",
+    "isn't",
+    "it",
+    "it's",
+    "its",
+    "itself",
+    "let's",
+    "me",
+    "more",
+    "most",
+    "mustn't",
+    "my",
+    "myself",
+    "no",
+    "nor",
+    "not",
+    "of",
+    "off",
+    "on",
+    "once",
+    "only",
+    "or",
+    "other",
+    "ought",
+    "our",
+    "ours",
+    "ourselves",
+    "out",
+    "over",
+    "own",
+    "same",
+    "shan't",
+    "she",
+    "she'd",
+    "she'll",
+    "she's",
+    "should",
+    "shouldn't",
+    "so",
+    "some",
+    "such",
+    "than",
+    "that",
+    "that's",
+    "the",
+    "their",
+    "theirs",
+    "them",
+    "themselves",
+    "then",
+    "there",
+    "there's",
+    "these",
+    "they",
+    "they'd",
+    "they'll",
+    "they're",
+    "they've",
+    "this",
+    "those",
+    "through",
+    "to",
+    "too",
+    "under",
+    "until",
+    "up",
+    "very",
+    "was",
+    "wasn't",
+    "we",
+    "we'd",
+    "we'll",
+    "we're",
+    "we've",
+    "were",
+    "weren't",
+    "what",
+    "what's",
+    "when",
+    "when's",
+    "where",
+    "where's",
+    "which",
+    "while",
+    "who",
+    "who's",
+    "whom",
+    "why",
+    "why's",
+    "with",
+    "won't",
+    "would",
+    "wouldn't",
+    "you",
+    "you'd",
+    "you'll",
+    "you're",
+    "you've",
+    "your",
+    "yours",
+    "yourself",
+    "yourselves",
+}
+
+
+def build_fts_query_string(query: str) -> str:
+    """Extract significant keywords, filter stopwords, and join with '|' for OR tsquery."""
+    raw_tokens = re.findall(r"[a-zA-Z0-9]+(?:\.[a-zA-Z0-9]+)*", query.lower())
+    meaningful = [t for t in raw_tokens if t not in ENGLISH_STOPWORDS and len(t) > 1]
+    if not meaningful:
+        meaningful = [t for t in raw_tokens if len(t) > 1]
+    safe_terms = [
+        re.sub(r"[^a-zA-Z0-9.]", "", t) for t in meaningful if re.sub(r"[^a-zA-Z0-9.]", "", t)
+    ]
+    return " | ".join(safe_terms)
 
 
 class DuplicateDocumentError(Exception):
@@ -71,14 +271,16 @@ async def ingest_policy_document(
     # 2. Extract and sanitize text
     norm_filename = filename.lower()
     if norm_filename.endswith(".pdf") or doc_type == "pdf":
-        extracted_text = await extract_pdf(content)
+        raw_text = await extract_pdf(content)
         detected_type = "pdf"
     else:
-        extracted_text = extract_markdown(content)
+        raw_text = extract_markdown(content)
         detected_type = "markdown"
 
+    cleaned_text, warning_banner = extract_banner_and_clean_text(raw_text)
+
     # 3. Sliding-window chunking
-    chunks_data = chunk_document(extracted_text)
+    chunks_data = chunk_document(cleaned_text)
     if not chunks_data:
         raise ValueError("Document yielded no usable text chunks")
 
@@ -111,6 +313,9 @@ async def ingest_policy_document(
     is_postgres = session.bind is not None and "postgresql" in session.bind.dialect.name
     for idx, c in enumerate(chunks_data):
         chunk_emb = embeddings[idx] if embeddings and idx < len(embeddings) else None
+        chunk_meta = dict(c["meta"]) if c["meta"] else {}
+        if warning_banner:
+            chunk_meta["warning_banner"] = warning_banner
         chunk = PolicyChunk(
             id=uuid4(),
             document_id=doc_id,
@@ -119,7 +324,7 @@ async def ingest_policy_document(
             text=c["text"],
             checksum_sha256=c["checksum_sha256"],
             embedding=chunk_emb,
-            meta=c["meta"],
+            meta=chunk_meta,
         )
         if is_postgres:
             # Set PostgreSQL TSVector via server expression
@@ -281,17 +486,17 @@ async def search_policy_corpus(
     session: AsyncSession,
     query: str,
     top_k: int = 5,
-    tau_vector: float = 0.65,
-    tau_lexical: float = 0.05,
-    vector_weight: float = 0.7,
-    text_weight: float = 0.3,
+    tau_vector: float = DEFAULT_TAU_VECTOR,
+    tau_lexical: float = DEFAULT_TAU_LEXICAL,
+    vector_weight: float = DEFAULT_VECTOR_WEIGHT,
+    text_weight: float = DEFAULT_TEXT_WEIGHT,
 ) -> tuple[str, list[RAGSearchResultItem]]:
     """
     Perform hybrid retrieval: pgvector cosine similarity + Postgres full-text search with RRF.
 
     Signals are absolute-calibrated:
-    - Cosine similarity >= tau_vector
-    - Lexical rank >= tau_lexical
+    - Cosine similarity >= tau_vector (default 0.65)
+    - Lexical rank >= tau_lexical (default 0.02)
     - RRF combines relative rank position only among surviving candidates
     - Graceful fallback to lexical_only if embedding generation is unavailable
     """
@@ -330,6 +535,8 @@ async def search_policy_corpus(
             top_k=top_k,
             tau_vector=tau_vector,
             tau_lexical=tau_lexical,
+            vector_weight=vector_weight,
+            text_weight=text_weight,
         )
 
 
@@ -346,6 +553,7 @@ async def _search_postgres(
     """Execute hybrid vector + full-text search against PostgreSQL."""
     vector_candidates: dict[UUID, dict[str, Any]] = {}
     lexical_candidates: dict[UUID, dict[str, Any]] = {}
+    candidate_k = top_k * CANDIDATE_POOL_MULTIPLIER
 
     # A. Dense Vector Retrieval
     if query_vector is not None:
@@ -367,7 +575,7 @@ async def _search_postgres(
             {
                 "query_vec": str(query_vector),
                 "tau_v": tau_vector,
-                "candidate_k": top_k * 3,
+                "candidate_k": candidate_k,
             },
         )
         for rank_idx, row in enumerate(v_res.mappings().all(), start=1):
@@ -383,26 +591,42 @@ async def _search_postgres(
                 "vector_rank": rank_idx,
             }
 
-    # B. Full-Text Search Retrieval (parameterized websearch_to_tsquery)
+    # B. Full-Text Search Retrieval with OR-semantics tsquery and stopword filtering
+    or_query = build_fts_query_string(query)
     lexical_sql = text("""
+        WITH query_def AS (
+            SELECT
+                websearch_to_tsquery('english', :raw_q) as exact_ts,
+                CASE
+                    WHEN :or_q != '' THEN to_tsquery('english', :or_q)
+                    ELSE NULL
+                END as or_ts
+        )
         SELECT
             c.id, c.document_id, d.title as doc_title, c.section_title,
             c.text, c.checksum_sha256,
-            ts_rank_cd(c.tsv, websearch_to_tsquery('english', :q)) as lex_rank
+            ts_rank_cd(c.tsv, coalesce(qd.exact_ts || qd.or_ts, qd.exact_ts, qd.or_ts)) as lex_rank
         FROM policy_chunks c
         JOIN policy_documents d ON c.document_id = d.id
+        CROSS JOIN query_def qd
         WHERE d.status = 'active'
-          AND c.tsv @@ websearch_to_tsquery('english', :q)
-          AND ts_rank_cd(c.tsv, websearch_to_tsquery('english', :q)) >= :tau_lex
+          AND (
+              (qd.exact_ts IS NOT NULL AND c.tsv @@ qd.exact_ts)
+              OR (qd.or_ts IS NOT NULL AND c.tsv @@ qd.or_ts)
+          )
+          AND ts_rank_cd(
+              c.tsv, coalesce(qd.exact_ts || qd.or_ts, qd.exact_ts, qd.or_ts)
+          ) >= :tau_lex
         ORDER BY lex_rank DESC
         LIMIT :candidate_k
     """)
     l_res = await session.execute(
         lexical_sql,
         {
-            "q": query,
+            "raw_q": query,
+            "or_q": or_query,
             "tau_lex": tau_lexical,
-            "candidate_k": top_k * 3,
+            "candidate_k": candidate_k,
         },
     )
     for rank_idx, row in enumerate(l_res.mappings().all(), start=1):
@@ -446,11 +670,11 @@ async def _search_postgres(
 
         if v_data is not None:
             cos_sim = v_data["cosine_sim"]
-            rrf_score += vector_weight * (1.0 / (60.0 + v_data["vector_rank"]))
+            rrf_score += vector_weight * (1.0 / (RRF_K + v_data["vector_rank"]))
 
         if l_data is not None:
             lex_rank = l_data["lexical_rank"]
-            rrf_score += text_weight * (1.0 / (60.0 + l_data["lexical_pos"]))
+            rrf_score += text_weight * (1.0 / (RRF_K + l_data["lexical_pos"]))
 
         scored_items.append(
             RAGSearchResultItem(
@@ -479,9 +703,15 @@ async def _search_sqlite(
     top_k: int,
     tau_vector: float,
     tau_lexical: float,
+    vector_weight: float = DEFAULT_VECTOR_WEIGHT,
+    text_weight: float = DEFAULT_TEXT_WEIGHT,
 ) -> tuple[str, list[RAGSearchResultItem]]:
     """Fallback search for SQLite test environments using keyword matching."""
-    tokens = [t.lower() for t in query.split() if len(t) >= 3]
+    or_q = build_fts_query_string(query)
+    terms = [t.strip().lower() for t in or_q.split("|") if t.strip()]
+    if not terms:
+        terms = [t.lower() for t in query.split() if len(t) >= 3]
+
     stmt = (
         select(PolicyChunk, PolicyDocument)
         .join(PolicyDocument, PolicyChunk.document_id == PolicyDocument.id)
@@ -493,7 +723,7 @@ async def _search_sqlite(
     scored: list[tuple[float, PolicyChunk, PolicyDocument]] = []
     for chunk, doc in rows:
         text_lower = chunk.text.lower()
-        score = sum(1.0 for t in tokens if t in text_lower)
+        score = sum(1.0 for t in terms if t in text_lower)
         if score > 0:
             scored.append((score, chunk, doc))
 
@@ -511,8 +741,8 @@ async def _search_sqlite(
                 section_title=chunk.section_title,
                 text=chunk.text,
                 checksum_sha256=chunk.checksum_sha256,
-                lexical_rank=score,
-                rrf_score=1.0 / (60.0 + rank_idx),
+                lexical_rank=round(score * 0.1, 4),
+                rrf_score=round(text_weight * (1.0 / (RRF_K + rank_idx)), 6),
                 grounded=True,
             )
         )

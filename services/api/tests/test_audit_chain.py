@@ -351,4 +351,3 @@ async def test_no_http_route_can_modify_audit_log(
 
         resp_decision = await caller("/v1/decisions/1", headers=admin_headers)
         assert resp_decision.status_code in (404, 405)
-

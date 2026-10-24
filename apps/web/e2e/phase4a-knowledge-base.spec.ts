@@ -1,10 +1,15 @@
 import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import { clearPolicyCorpusDirectSql } from "./helpers/directSqlAuditTamper";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const mediaDir = path.resolve(__dirname, "../../../docs/media");
+const sampleDocPath = path.resolve(
+  __dirname,
+  "../../../policies/examples/docs/payments-fraud-policy.md"
+);
 
 test.use({
   video: {
@@ -15,77 +20,98 @@ test.use({
 });
 
 test.describe("Phase 4a Knowledge Base & Policy RAG E2E", () => {
-  test("Knowledge Base: loads corpus, views chunks, searches with hybrid RAG, and tests refusal", async ({
+  test("Continuous Flow: empty KB -> Load Sample Docs -> chunk viewer -> grounded query -> refusal -> duplicate upload rejected -> archive doc", async ({
     page,
   }) => {
+    test.setTimeout(75000);
+
+    // 0. Ensure clean empty corpus state via direct SQL
+    await clearPolicyCorpusDirectSql();
+
     // 1. Login
     await page.goto("/login");
     await page.getByTestId("dev-session-button").click();
     await page.waitForURL(/\/app/, { timeout: 10000 });
     await page.waitForTimeout(500);
 
-    // 2. Navigate to Knowledge Base
+    // 2. Navigate to Knowledge Base (Empty state)
     await page.getByTestId("nav-knowledge-base").click();
     await page.waitForURL(/\/app\/knowledge-base/, { timeout: 8000 });
     await page.waitForTimeout(1000);
 
     await expect(page.getByRole("heading", { name: "Knowledge Base & Policy RAG" })).toBeVisible();
-    await expect(page.getByText("BGE-small ONNX")).toBeVisible();
+    await expect(page.getByText(/No policy documents found/i)).toBeVisible();
+    await page.waitForTimeout(1500);
 
-    // 3. Load Sample Docs if not already populated
-    const loadSampleBtn = page.getByRole("button", { name: /Load Sample Docs|Load Sample Policies/i }).first();
-    if (await loadSampleBtn.isVisible()) {
-      await loadSampleBtn.click();
-      await page.waitForTimeout(2000);
-    }
+    // 3. Click Load Sample Policies
+    const loadSampleBtn = page.getByRole("button", { name: /Load Sample Policies|Load Sample Docs/i }).first();
+    await expect(loadSampleBtn).toBeVisible();
+    await loadSampleBtn.click();
 
-    // Verify document table contains sample policies
-    await expect(page.getByText(/Payments Fraud Policy|Data Handling Policy/i).first()).toBeVisible({
-      timeout: 8000,
-    });
+    // Verify 4 documents populated
+    await expect(page.getByText("Payments Fraud Policy")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Data Handling Policy")).toBeVisible();
+    await page.waitForTimeout(1500);
 
-    // Capture Overview Screenshot
-    await page.screenshot({
-      path: path.join(mediaDir, "phase4a-knowledge-base-overview.png"),
-      fullPage: true,
-    });
-
-    // 4. Inspect Document Chunks Modal
+    // 4. Open Chunk Viewer Modal
     const firstChunksBtn = page.getByRole("button", { name: /Chunks/i }).first();
     await firstChunksBtn.click();
     await page.waitForTimeout(1000);
     await expect(page.getByText(/Sequential Chunks:/i)).toBeVisible();
     await expect(page.getByText(/Chunk #0/i)).toBeVisible();
+    await page.waitForTimeout(2000);
 
-    // Close modal
+    // Close Chunk Viewer Modal
     await page.getByRole("button", { name: /Close/i }).click();
     await expect(page.getByText(/Sequential Chunks:/i)).not.toBeVisible();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
 
-    // 5. Test "Ask Your Policies" Inspector with in-scope query
+    // 5. Grounded Query with Full Result Visible
     const searchInput = page.getByPlaceholder("Ask a policy question...");
     await searchInput.fill("What is the maximum single-transaction limit for an automated payment agent?");
     await page.getByRole("button", { name: /Search Policy Corpus/i }).click();
-    await page.waitForTimeout(1500);
 
-    // Verify search hit
+    // Verify hit
     await expect(page.getByText(/Grounded/i).first()).toBeVisible({ timeout: 8000 });
     await expect(page.getByText(/INR 10,000/i).first()).toBeVisible();
+    await page.waitForTimeout(2000);
 
-    // Capture Search / Inspector Screenshot
-    await page.screenshot({
-      path: path.join(mediaDir, "phase4a-rag-grounded-search.png"),
-      fullPage: true,
-    });
-
-    // 6. Test Refusal on Out-of-Scope Query
-    await searchInput.fill("What is the recommended dosage for paracetamol in pediatric patients?");
+    // 6. Near-Domain Refusal
+    await searchInput.fill("What is the maritime salvage compensation formula for abandoned cargo vessels?");
     await page.getByRole("button", { name: /Search Policy Corpus/i }).click();
-    await page.waitForTimeout(1500);
 
     await expect(page.getByText(/Refusal: No Grounded Policy Clauses/i)).toBeVisible({ timeout: 8000 });
+    await page.waitForTimeout(2000);
 
-    // Save clip
+    // 7. Duplicate Upload Rejected
+    await page.locator('input[type="file"]').setInputFiles(sampleDocPath);
+    await page.waitForTimeout(500);
+
+    // Click Upload & Index
+    await page.getByRole("button", { name: /Upload & Index/i }).click();
+
+    // Expect HTTP 409 rejection message in UI
+    await expect(page.getByText(/already exists/i)).toBeVisible({ timeout: 8000 });
+    await page.waitForTimeout(2000);
+
+    // Auto-accept confirmation dialogs
+    page.on("dialog", (dialog) => dialog.accept());
+
+    // 8. Archive a Document
+    const archiveButtons = page.getByTestId("archive-doc-btn");
+    await expect(archiveButtons.first()).toBeVisible({ timeout: 5000 });
+    const countBefore = await archiveButtons.count();
+    expect(countBefore).toBeGreaterThanOrEqual(1);
+
+    await archiveButtons.last().click();
+    await page.waitForTimeout(2000);
+
+    // Active documents count should decrease
+    const countAfter = await archiveButtons.count();
+    expect(countAfter).toBe(countBefore - 1);
+    await page.waitForTimeout(2000);
+
+    // Close page to flush video
     await page.close();
     const clipPath = path.join(mediaDir, "phase4a-knowledge-base-flow.webm");
     await page.video()?.saveAs(clipPath);

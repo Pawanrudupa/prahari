@@ -46,7 +46,7 @@ export function KnowledgeBasePage() {
   );
   const [topK, setTopK] = useState(3);
   const [tauVector, setTauVector] = useState(0.65);
-  const [tauLexical, setTauLexical] = useState(0.05);
+  const [tauLexical, setTauLexical] = useState(0.02);
 
   // 1. Query: Documents List
   const {
@@ -337,6 +337,7 @@ export function KnowledgeBasePage() {
                             {doc.status === "active" && (
                               <button
                                 type="button"
+                                data-testid="archive-doc-btn"
                                 onClick={() => {
                                   if (confirm(`Archive document "${doc.title}"?`)) {
                                     archiveMutation.mutate(doc.id);

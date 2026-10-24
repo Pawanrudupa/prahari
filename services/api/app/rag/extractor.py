@@ -21,6 +21,30 @@ _EXTRACTOR_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="extr
 _ZERO_WIDTH_CHARS = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff\u202a-\u202e]")
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
+# Regex to detect and extract fictional policy warning banners
+_BANNER_REGEX = re.compile(
+    r"(?:^|\n)(?:#\s+[^\n]*\(fictional\)[^\n]*\n+)?(>\s*\*\*WARNING:?\*\*[^\n]+(?:\n>[^\n]+)*)",
+    re.IGNORECASE,
+)
+
+
+def extract_banner_and_clean_text(text: str) -> tuple[str, str | None]:
+    """
+    Separate fictional disclaimer warning banner from retrievable document text.
+    Returns (cleaned_text, banner_text).
+    """
+    banner_match = _BANNER_REGEX.search(text)
+    if not banner_match:
+        return text.strip(), None
+
+    banner_text = banner_match.group(1).strip()
+    cleaned = text[: banner_match.start()] + text[banner_match.end() :]
+    # Strip any standalone fictional header line
+    cleaned = re.sub(
+        r"^#\s+[^\n]*\(fictional\)[^\n]*\n*", "", cleaned.lstrip(), flags=re.IGNORECASE
+    )
+    return cleaned.strip(), banner_text
+
 
 class ExtractionError(Exception):
     """Raised when document extraction fails validation or security constraints."""

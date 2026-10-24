@@ -70,3 +70,19 @@ export async function restoreAuditRecordDirectSql(seq: number, originalHash: str
     await client.end();
   }
 }
+
+/**
+ * Clears policy corpus tables (chunks and documents) for clean E2E test runs.
+ */
+export async function clearPolicyCorpusDirectSql(): Promise<void> {
+  const client = new pg.Client({ connectionString: getConnectionString() });
+  await client.connect();
+
+  try {
+    await client.query("DELETE FROM policy_chunks");
+    await client.query("DELETE FROM policy_documents");
+  } finally {
+    await client.end();
+  }
+}
+

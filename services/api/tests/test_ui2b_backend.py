@@ -674,5 +674,3 @@ async def test_admin_events_separated_from_decisions(
     admin_items = admin_events_resp.json()["items"]
     assert len(admin_items) > 0
     assert any(ev["actor"] == "admin" and ev["operation"] == "agent.created" for ev in admin_items)
-
-

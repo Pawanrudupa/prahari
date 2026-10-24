@@ -88,6 +88,11 @@ try {
     Write-Host "[7/8] API: Running Gateway Latency Benchmark (Target: p95 < 50ms)..." -ForegroundColor Yellow
     uv run python benchmarks/bench_gateway.py
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    # 7b. API: Policy RAG Evaluation
+    Write-Host "[7b/8] API: Running Policy RAG Deterministic Evaluation..." -ForegroundColor Yellow
+    uv run python evals/run_eval.py --ci
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
     Pop-Location
 }

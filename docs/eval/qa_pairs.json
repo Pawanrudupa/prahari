@@ -33,7 +33,7 @@
     "in_scope": true,
     "expected_document": "payments-fraud-policy.md",
     "expected_section": "Section 4.1 Cardholder Data Exclusion",
-    "expected_text_contains": "PAN"
+    "expected_text_contains": "Primary Account Numbers"
   },
   {
     "id": "qa-dev-005",
@@ -60,12 +60,12 @@
     "in_scope": true,
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 4.2 Logging Sanitation",
-    "expected_text_contains": "never be written"
+    "expected_text_contains": "Raw customer payloads"
   },
   {
     "id": "qa-dev-008",
     "split": "dev",
-    "query": "What are the four data classification tiers defined in the data handling standard?",
+    "query": "What are the four sensitivity tiers in the corporate data classification framework?",
     "in_scope": true,
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 2 Data Classification Framework",
@@ -74,7 +74,7 @@
   {
     "id": "qa-dev-009",
     "split": "dev",
-    "query": "What operations is an agent in the Support role permitted to execute?",
+    "query": "What permissions and restrictions are assigned to the Support agent persona?",
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 2.1 Agent Role Categorization",
@@ -83,119 +83,119 @@
   {
     "id": "qa-dev-010",
     "split": "dev",
-    "query": "What is the maximum lifespan of an agent session bearer token?",
-    "in_scope": true,
-    "expected_document": "access-control-policy.md",
-    "expected_section": "Section 3.1 Ephemeral Session Tokens",
-    "expected_text_contains": "60 minutes"
-  },
-  {
-    "id": "qa-dev-011",
-    "split": "dev",
-    "query": "Can an agent invoke a gateway tool without an active capability grant?",
+    "query": "What is the requirement for capability grants and granular tool access?",
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 2.2 Capability Grants and Granular Tools",
     "expected_text_contains": "CapabilityGrant"
   },
   {
+    "id": "qa-dev-011",
+    "split": "dev",
+    "query": "Why can the support agent view customer tickets under rule R1?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 2.1 Agent Role Categorization",
+    "expected_text_contains": "Support"
+  },
+  {
     "id": "qa-dev-012",
     "split": "dev",
-    "query": "Within how many minutes must agents stop processing data after consent withdrawal?",
+    "query": "Which clause mandates redacting Aadhaar numbers and phone numbers for rule R2?",
     "in_scope": true,
-    "expected_document": "consent-governance-policy.md",
-    "expected_section": "Section 3.1 Unconditional Right of Withdrawal",
-    "expected_text_contains": "15 minutes"
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 3.1 Masking of Personal Identifiers",
+    "expected_text_contains": "National identity"
   },
   {
     "id": "qa-dev-013",
     "split": "dev",
-    "query": "Can customer personal data collected for support be reused for general model training?",
+    "query": "Why does exporting over 100 customer records escalate under rule R3?",
     "in_scope": true,
-    "expected_document": "consent-governance-policy.md",
-    "expected_section": "Section 2.1 Explicit Purpose Binding",
-    "expected_text_contains": "secondary purposes"
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 3.2 Bulk Data Export Prohibitions",
+    "expected_text_contains": "100 rows"
   },
   {
     "id": "qa-dev-014",
     "split": "dev",
-    "query": "What is the corporate tax deduction rate for R&D centers located in Bengaluru?",
-    "in_scope": false,
-    "expected_document": null,
-    "expected_section": null,
-    "expected_text_contains": null
+    "query": "What policy justifies denying an agent prompt injection attempt under rule R4?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 3.2 Credential Non-Disclosure",
+    "expected_text_contains": "security denial"
   },
   {
     "id": "qa-dev-015",
     "split": "dev",
-    "query": "How do you configure an Istio service mesh ingress gateway for gRPC traffic?",
+    "query": "What policy rule limits burst velocity disbursements to prevent runaway agent loops?",
+    "in_scope": true,
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 3.2 Burst Velocity Restrictions",
+    "expected_text_contains": "5 consecutive payment disbursements"
+  },
+  {
+    "id": "qa-dev-016",
+    "split": "dev",
+    "query": "How many days does a merchant have to dispute a credit card chargeback?",
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
     "expected_text_contains": null
   },
   {
-    "id": "qa-test-016",
-    "split": "test",
-    "query": "What is the burst velocity limit for consecutive payment disbursements?",
-    "in_scope": true,
-    "expected_document": "payments-fraud-policy.md",
-    "expected_section": "Section 3.2 Burst Velocity Restrictions",
-    "expected_text_contains": "5 consecutive payment"
+    "id": "qa-dev-017",
+    "split": "dev",
+    "query": "Which symmetric cipher suite (AES-256-GCM vs ChaCha20) is required for database storage at rest?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
   },
   {
-    "id": "qa-test-017",
-    "split": "test",
-    "query": "What approval is required for autonomous customer refunds greater than INR 5,000?",
-    "in_scope": true,
-    "expected_document": "payments-fraud-policy.md",
-    "expected_section": "Section 4.2 Reversal and Refund Authorization",
-    "expected_text_contains": "supervisor sign-off"
+    "id": "qa-dev-018",
+    "split": "dev",
+    "query": "What specific consent disclosure is mandated before capturing customer facial biometrics?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
   },
   {
-    "id": "qa-test-018",
-    "split": "test",
-    "query": "Can tier 1 support representatives execute direct payment charge reversals?",
-    "in_scope": true,
-    "expected_document": "payments-fraud-policy.md",
-    "expected_section": "Section 4.2 Reversal and Refund Authorization",
-    "expected_text_contains": "tier-1 customer support"
+    "id": "qa-dev-019",
+    "split": "dev",
+    "query": "What is the maximum allowed LLM temperature setting for automated financial agents?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
   },
   {
-    "id": "qa-test-019",
-    "split": "test",
-    "query": "Are agents allowed to persist decrypted customer attributes in local disk caches?",
-    "in_scope": true,
-    "expected_document": "data-handling-policy.md",
-    "expected_section": "Section 4.1 Ephemeral Processing",
-    "expected_text_contains": "no long-term persistence"
-  },
-  {
-    "id": "qa-test-020",
-    "split": "test",
-    "query": "What data sensitivity class includes customer phone numbers and financial instruments?",
-    "in_scope": true,
-    "expected_document": "data-handling-policy.md",
-    "expected_section": "Section 2 Data Classification Framework",
-    "expected_text_contains": "Restricted (PII)"
+    "id": "qa-dev-020",
+    "split": "dev",
+    "query": "How frequently must human administrators with break-glass credentials undergo criminal background checks?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
   },
   {
     "id": "qa-test-021",
     "split": "test",
-    "query": "How should masked phone numbers be formatted when displayed by support agents?",
+    "query": "Can an automated agent issue a direct customer refund of 15,000 rupees without authorization?",
     "in_scope": true,
-    "expected_document": "data-handling-policy.md",
-    "expected_section": "Section 3.1 Masking of Personal Identifiers",
-    "expected_text_contains": "terminal two digits"
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 4.2 Reversal and Refund Authorization",
+    "expected_text_contains": "INR 5,000"
   },
   {
     "id": "qa-test-022",
     "split": "test",
-    "query": "What permissions are assigned to the Auditor operational agent role?",
+    "query": "What is the lifespan of bearer authentication tokens issued to agents?",
     "in_scope": true,
     "expected_document": "access-control-policy.md",
-    "expected_section": "Section 2.1 Agent Role Categorization",
-    "expected_text_contains": "Read-only oversight"
+    "expected_section": "Section 3.1 Ephemeral Session Tokens",
+    "expected_text_contains": "60 minutes"
   },
   {
     "id": "qa-test-023",
@@ -272,43 +272,88 @@
   {
     "id": "qa-test-031",
     "split": "test",
-    "query": "What is the recommended dosage for paracetamol in pediatric patients?",
-    "in_scope": false,
-    "expected_document": null,
-    "expected_section": null,
-    "expected_text_contains": null
+    "query": "Can customer data collected for billing support be used for LLM fine-tuning without consent?",
+    "in_scope": true,
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 2.1 Explicit Purpose Binding",
+    "expected_text_contains": "fine-tuning"
   },
   {
     "id": "qa-test-032",
     "split": "test",
-    "query": "How many teams qualify for the ICC Cricket World Cup knockout stage?",
-    "in_scope": false,
-    "expected_document": null,
-    "expected_section": null,
-    "expected_text_contains": null
+    "query": "How quickly must automated agents cease accessing customer attributes after consent withdrawal?",
+    "in_scope": true,
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 3.1 Unconditional Right of Withdrawal",
+    "expected_text_contains": "15 minutes"
   },
   {
     "id": "qa-test-033",
     "split": "test",
-    "query": "What is the formula to calculate option Greeks using Black-Scholes PDE?",
-    "in_scope": false,
-    "expected_document": null,
-    "expected_section": null,
-    "expected_text_contains": null
+    "query": "Under what circumstances may customer attributes be persisted in vector databases?",
+    "in_scope": true,
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 4.1 Ephemeral Processing",
+    "expected_text_contains": "no long-term persistence"
   },
   {
     "id": "qa-test-034",
     "split": "test",
-    "query": "How do you repair a leaky kitchen faucet with ceramic disc cartridges?",
+    "query": "What is the restriction on Billing role agents regarding customer data?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 2.1 Agent Role Categorization",
+    "expected_text_contains": "Billing"
+  },
+  {
+    "id": "qa-test-035",
+    "split": "test",
+    "query": "Are universal or wildcard tool grants permitted at the gateway?",
+    "in_scope": true,
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 2.2 Capability Grants and Granular Tools",
+    "expected_text_contains": "Universal or wildcard"
+  },
+  {
+    "id": "qa-test-036",
+    "split": "test",
+    "query": "What is the statutory interest rate penalty for delayed interbank NEFT settlements?",
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
     "expected_text_contains": null
   },
   {
-    "id": "qa-test-035",
+    "id": "qa-test-037",
     "split": "test",
-    "query": "What are the traffic violation fines for exceeding 100 km/h on National Highway 44?",
+    "query": "What are the regulatory guidelines for storing Aadhaar iris biometrics in local ATM hardware?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-test-038",
+    "split": "test",
+    "query": "How many days must a merchant retain paper point-of-sale terminal receipts?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-test-039",
+    "split": "test",
+    "query": "What is the maximum allowed batch size when fine-tuning a transformer model for fraud detection?",
+    "in_scope": false,
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-test-040",
+    "split": "test",
+    "query": "Which certificate authority root is mandated for TLS 1.3 inter-agent mTLS certificates?",
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,

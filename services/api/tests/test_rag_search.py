@@ -87,3 +87,84 @@ Legacy system uses 3DES cipher suites which are now prohibited.
     # Should not match the archived document
     matched_doc_ids = [r["document_id"] for r in data["results"]]
     assert doc_id not in matched_doc_ids
+
+
+@pytest.mark.asyncio
+async def test_rag_natural_language_question_activates_both_legs(client: AsyncClient) -> None:
+    """Verify that a natural language question activates both dense vector and lexical legs."""
+    md_content = b"""# Prahari sample policy (fictional)
+
+# Section 2 Transaction Thresholds
+## Section 2.1 Single-Transaction Limits
+Automated agents operating without intervention can initiate transactions
+up to a maximum threshold of INR 10,000 per request, provided recipient is validated.
+"""
+    files = {"file": ("tx_limits_test.md", md_content, "text/markdown")}
+    res = await client.post(
+        "/v1/rag/documents",
+        files=files,
+        data={"title": "Single Transaction Limits Test"},
+        headers=ADMIN_HEADERS,
+    )
+    assert res.status_code == 201
+
+    search_payload = {
+        "query": "What is the maximum single-transaction limit for an automated payment agent?",
+        "top_k": 3,
+        "tau_vector": 0.50,
+        "tau_lexical": 0.01,
+    }
+    s_res = await client.post(
+        "/v1/rag/search",
+        json=search_payload,
+        headers=ADMIN_HEADERS,
+    )
+    assert s_res.status_code == 200
+    data = s_res.json()
+    assert data["total_matches"] >= 1
+    top_hit = data["results"][0]
+
+    # Verify both legs contributed scores when FastEmbed is available
+    assert top_hit["lexical_rank"] is not None
+    assert top_hit["lexical_rank"] > 0
+    if top_hit["cosine_similarity"] is not None:
+        assert data["retrieval_mode"] == "hybrid"
+
+
+@pytest.mark.asyncio
+async def test_rag_exact_section_and_term_query_works_lexically(client: AsyncClient) -> None:
+    """Verify that exact section numbers and specific financial tokens match lexically."""
+    md_content = b"""# Prahari sample policy (fictional)
+
+# Section 2 Transaction Thresholds
+## Section 2.1 Single-Transaction Limits
+Automated agents operating without intervention can initiate transactions
+up to a maximum threshold of INR 10,000 per request.
+"""
+    files = {"file": ("exact_term_policy.md", md_content, "text/markdown")}
+    res = await client.post(
+        "/v1/rag/documents",
+        files=files,
+        data={"title": "Exact Terms Policy"},
+        headers=ADMIN_HEADERS,
+    )
+    assert res.status_code == 201
+
+    search_payload = {
+        "query": "Section 2.1 INR 10,000",
+        "top_k": 3,
+        "tau_vector": 0.0,
+        "tau_lexical": 0.01,
+    }
+    s_res = await client.post(
+        "/v1/rag/search",
+        json=search_payload,
+        headers=ADMIN_HEADERS,
+    )
+    assert s_res.status_code == 200
+    data = s_res.json()
+    assert data["total_matches"] >= 1
+    top_hit = data["results"][0]
+    assert "2.1" in (top_hit["section_title"] or "")
+    assert top_hit["lexical_rank"] is not None
+    assert top_hit["lexical_rank"] > 0

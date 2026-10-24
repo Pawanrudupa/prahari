@@ -1,4 +1,11 @@
-"""Section-aware sliding-window chunker for policy documents."""
+"""Section-aware sliding-window chunker for policy documents.
+
+Guarantees:
+- Never emits heading-only chunks (merges headings with their body content).
+- Prepends hierarchical parent heading path to section_title (e.g. "Section 2 > 2.1").
+- Bounded sliding window if a section exceeds target size.
+- Computes SHA-256 for exact chunk deduplication and snapshot tracking.
+"""
 
 from __future__ import annotations
 
@@ -16,10 +23,33 @@ class ChunkItem(TypedDict):
 
 
 # Matches markdown headers like # Section 1 ..., ## Section 2.1 ..., or # Scope
-_HEADING_REGEX = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
+_HEADING_REGEX = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
 
 DEFAULT_CHUNK_SIZE_CHARS = 1200
 DEFAULT_CHUNK_OVERLAP_CHARS = 150
+
+
+def _build_hierarchical_title(stack: list[tuple[int, str]]) -> str:
+    """Build section title path from heading hierarchy stack (e.g. 'Section 2 > 2.1')."""
+    if not stack:
+        return "General"
+    if len(stack) == 1:
+        return stack[0][1]
+
+    parts: list[str] = [stack[0][1]]
+    for idx in range(1, len(stack)):
+        title = stack[idx][1]
+        # If subsection starts with Section X.Y, extract label
+        sub_match = re.match(r"^Section\s+([0-9]+(?:\.[0-9]+)*)(?:\s+(.*))?$", title, re.IGNORECASE)
+        parent_match = re.match(r"^Section\s+([0-9]+)", stack[idx - 1][1], re.IGNORECASE)
+        if sub_match and parent_match:
+            sub_num = sub_match.group(1)
+            sub_rest = sub_match.group(2) or ""
+            parts.append(f"{sub_num} {sub_rest}".strip())
+        else:
+            parts.append(title)
+
+    return " > ".join(parts)
 
 
 def chunk_document(
@@ -27,44 +57,80 @@ def chunk_document(
     target_size: int = DEFAULT_CHUNK_SIZE_CHARS,
     overlap: int = DEFAULT_CHUNK_OVERLAP_CHARS,
 ) -> list[ChunkItem]:
-    """Split a policy document into section-aware overlapping chunks."""
-    if not text.strip():
+    """
+    Split a policy document into section-aware chunks.
+
+    Never emits heading-only chunks; merges heading text with following body.
+    Prepends parent heading hierarchy to each chunk's section_title.
+    """
+    cleaned = text.strip()
+    if not cleaned:
         return []
 
-    # Identify all section headings and their offsets
-    heading_matches = list(_HEADING_REGEX.finditer(text))
-
-    sections: list[tuple[str | None, str]] = []
+    heading_matches = list(_HEADING_REGEX.finditer(cleaned))
     if not heading_matches:
-        # No markdown headings found; treat whole text as one section
-        sections.append((None, text))
-    else:
-        # Preamble before the first heading
-        first_heading_start = heading_matches[0].start()
-        if first_heading_start > 0:
-            preamble = text[:first_heading_start].strip()
-            if preamble:
-                sections.append(("Preamble", preamble))
-
-        for idx, match in enumerate(heading_matches):
-            heading_title = match.group(2).strip()
-            start_pos = match.start()
-            end_pos = (
-                heading_matches[idx + 1].start()
-                if idx + 1 < len(heading_matches)
-                else len(text)
+        sha = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
+        return [
+            ChunkItem(
+                chunk_index=0,
+                section_title="Preamble",
+                text=cleaned,
+                checksum_sha256=sha,
+                meta={"char_length": len(cleaned), "section": "Preamble"},
             )
-            section_body = text[start_pos:end_pos].strip()
-            if section_body:
-                sections.append((heading_title, section_body))
+        ]
 
-    # Now chunk each section, respecting section boundaries
+    heading_stack: list[tuple[int, str]] = []
+    raw_sections: list[tuple[str, str]] = []
+
+    first_heading = heading_matches[0]
+    if first_heading.start() > 0:
+        preamble_text = cleaned[: first_heading.start()].strip()
+        if preamble_text:
+            raw_sections.append(("Preamble", preamble_text))
+
+    for idx, match in enumerate(heading_matches):
+        level = len(match.group(1))
+        heading_title = match.group(2).strip()
+
+        while heading_stack and heading_stack[-1][0] >= level:
+            heading_stack.pop()
+        heading_stack.append((level, heading_title))
+
+        current_hierarchical_title = _build_hierarchical_title(heading_stack)
+
+        line_end = cleaned.find("\n", match.end())
+        content_start = line_end + 1 if line_end != -1 else match.end()
+        content_end = (
+            heading_matches[idx + 1].start() if idx + 1 < len(heading_matches) else len(cleaned)
+        )
+
+        body = cleaned[content_start:content_end].strip()
+
+        # INVARIANT: Never emit heading-only chunks.
+        if not body:
+            continue
+
+        merged_text = f"{match.group(0).strip()}\n\n{body}"
+        raw_sections.append((current_hierarchical_title, merged_text))
+
+    if not raw_sections:
+        sha = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
+        return [
+            ChunkItem(
+                chunk_index=0,
+                section_title="General",
+                text=cleaned,
+                checksum_sha256=sha,
+                meta={"char_length": len(cleaned), "section": "General"},
+            )
+        ]
+
     chunks: list[ChunkItem] = []
     global_index = 0
 
-    for sec_title, sec_content in sections:
+    for sec_title, sec_content in raw_sections:
         if len(sec_content) <= target_size:
-            # Fits in one chunk
             sha = hashlib.sha256(sec_content.encode("utf-8")).hexdigest()
             chunks.append(
                 ChunkItem(
@@ -77,10 +143,8 @@ def chunk_document(
             )
             global_index += 1
         else:
-            # Sliding window over the section content
-            # Try to split on paragraph or sentence boundaries
             paragraphs = sec_content.split("\n\n")
-            current_chunk_parts: list[str] = []
+            current_parts: list[str] = []
             current_len = 0
 
             for para in paragraphs:
@@ -88,8 +152,8 @@ def chunk_document(
                 if not para_clean:
                     continue
 
-                if current_len + len(para_clean) > target_size and current_chunk_parts:
-                    chunk_text = "\n\n".join(current_chunk_parts)
+                if current_len + len(para_clean) > target_size and current_parts:
+                    chunk_text = "\n\n".join(current_parts)
                     sha = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
                     chunks.append(
                         ChunkItem(
@@ -101,20 +165,14 @@ def chunk_document(
                         )
                     )
                     global_index += 1
-
-                    # Retain last paragraph for overlap if it fits
-                    if len(current_chunk_parts[-1]) <= overlap:
-                        current_chunk_parts = [current_chunk_parts[-1], para_clean]
-                        current_len = len(current_chunk_parts[0]) + len(para_clean)
-                    else:
-                        current_chunk_parts = [para_clean]
-                        current_len = len(para_clean)
+                    current_parts = [para_clean]
+                    current_len = len(para_clean)
                 else:
-                    current_chunk_parts.append(para_clean)
-                    current_len += len(para_clean)
+                    current_parts.append(para_clean)
+                    current_len += len(para_clean) + 2
 
-            if current_chunk_parts:
-                chunk_text = "\n\n".join(current_chunk_parts)
+            if current_parts:
+                chunk_text = "\n\n".join(current_parts)
                 sha = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
                 chunks.append(
                     ChunkItem(
