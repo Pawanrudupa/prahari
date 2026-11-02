@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Governance rule: limits fail closed unless explicitly set to fail open
     LIMITS_FAIL_OPEN: bool = False
 
+    # Policy RAG optional cross-encoder reranker
+    RAG_ENABLE_RERANKER: bool = False
+
     # Database connection pool sizing:
     # Sane conservative sizing: pool_size=10, max_overflow=5 (total 15 per worker).
     # INVARIANT: workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) must stay strictly below

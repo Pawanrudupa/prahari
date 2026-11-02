@@ -72,7 +72,7 @@ Evaluation precedence: deny > escalate > redact > allow > default. Every decisio
 - `GET /v1/rag/documents?include_archived=false` (list policy documents with chunk counts)
 - `GET /v1/rag/documents/{id}/chunks` (fetch chunks for a policy document)
 - `POST /v1/rag/documents/{id}/archive` (soft-archive policy document: sets `status='archived'`; emits audit event)
-- `POST /v1/rag/search` body `{query, top_k?, vector_threshold?, lexical_threshold?}` -> `{results, query_time_ms, count, retrieval_mode}` (hybrid retrieval: pgvector cosine similarity + Postgres full-text search with RRF and absolute threshold calibration)
+- `POST /v1/rag/search` body `{query, top_k?, tau_vector?, tau_lexical?, vector_weight?, text_weight?}` -> `{query, retrieval_mode, total_matches, results: [{chunk_id, document_id, document_title, section_title, text, checksum_sha256, cosine_similarity, lexical_rank, rrf_score, coverage_score, rare_term_matched, match_tier: "strong_match"|"related_unverified", rerank_score, grounded: false}]}` (hybrid retrieval: pgvector cosine similarity + Postgres full-text search with RRF and absolute threshold calibration; answerability gate enforces IDF-weighted query coverage c_min >= 0.22 and rare-term match)
 - `POST /v1/dev/load-sample-docs` (dev/admin helper to seed sample fictional policies from `policies/examples/docs/`)
 - `GET /v1/decisions/{id}/explain` -> `{summary, clauses:[{doc,chunk,score}], rule_id}` (Phase 4 Milestone 4b)
 - `GET /v1/sessions` (list sessions with goal, agent, timestamps, action counts) and `GET /v1/sessions/{id}/graph` -> DAG nodes/edges with causal parent-child actions for the 3D workflow view

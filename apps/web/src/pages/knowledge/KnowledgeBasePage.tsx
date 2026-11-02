@@ -476,7 +476,7 @@ export function KnowledgeBasePage() {
                   <div className="p-4 rounded-xl bg-slate-950/60 border border-amber-500/20 text-slate-300 text-xs">
                     <div className="flex items-center gap-2 text-amber-400 font-semibold mb-1">
                       <ShieldAlert className="w-4 h-4" />
-                      Refusal: No Grounded Policy Clauses
+                      No relevant clause (Refusal)
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
                       No policy clauses in the active corpus satisfied the minimum relevance threshold
@@ -486,42 +486,66 @@ export function KnowledgeBasePage() {
                   </div>
                 ) : (
                   <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-                    {searchMutation.data.results.map((hit, idx) => (
-                      <div
-                        key={hit.chunk_id}
-                        className="p-3 rounded-xl bg-slate-950/80 border border-white/[0.08] hover:border-cyan-500/30 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-2 mb-1.5">
-                          <div>
-                            <span className="text-[10px] font-mono text-cyan-400 font-bold mr-1.5">
-                              #{idx + 1}
-                            </span>
-                            <span className="text-xs font-semibold text-slate-200">
-                              {hit.section_title || hit.document_title}
-                            </span>
+                    {searchMutation.data.results.map((hit, idx) => {
+                      const isStrong = hit.match_tier === "strong_match";
+                      return (
+                        <div
+                          key={hit.chunk_id}
+                          className="p-3 rounded-xl bg-slate-950/80 border border-white/[0.08] hover:border-cyan-500/30 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <div>
+                              <span className="text-[10px] font-mono text-cyan-400 font-bold mr-1.5">
+                                #{idx + 1}
+                              </span>
+                              <span className="text-xs font-semibold text-slate-200">
+                                {hit.section_title || hit.document_title}
+                              </span>
+                            </div>
+                            {isStrong ? (
+                              <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                <ShieldCheck className="w-2.5 h-2.5" />
+                                Strong match
+                              </span>
+                            ) : (
+                              <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                <AlertTriangle className="w-2.5 h-2.5" />
+                                Related, may not answer your question
+                              </span>
+                            )}
                           </div>
-                          <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            <ShieldCheck className="w-2.5 h-2.5" />
-                            Grounded
-                          </span>
-                        </div>
 
-                        <div className="flex items-center gap-3 text-[10px] font-mono text-slate-400 mb-2">
-                          <span>Doc: {hit.document_title}</span>
-                          {hit.cosine_similarity !== null && (
-                            <span>Sim: {hit.cosine_similarity.toFixed(3)}</span>
+                          {!isStrong && (
+                            <div className="mb-2 p-2 rounded-lg bg-amber-950/30 border border-amber-500/20 text-[10px] text-amber-300/90 flex items-start gap-1.5">
+                              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-400" />
+                              <span>
+                                <strong>Relevance Warning:</strong> Query-term answerability coverage is below threshold
+                                ({hit.coverage_score !== undefined ? (hit.coverage_score * 100).toFixed(0) : "0"}% &lt; 22%).
+                                This clause mentions related concepts but may not directly answer your question.
+                              </span>
+                            </div>
                           )}
-                          {hit.lexical_rank !== null && (
-                            <span>FTS: {hit.lexical_rank.toFixed(3)}</span>
-                          )}
-                          <span className="text-cyan-400">RRF: {hit.rrf_score.toFixed(4)}</span>
-                        </div>
 
-                        <pre className="text-[11px] font-mono text-slate-300 bg-slate-900/60 p-2.5 rounded-lg whitespace-pre-wrap leading-relaxed border border-white/[0.04] overflow-x-auto">
-                          {hit.text}
-                        </pre>
-                      </div>
-                    ))}
+                          <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-slate-400 mb-2">
+                            <span>Doc: {hit.document_title}</span>
+                            {hit.cosine_similarity !== null && (
+                              <span>Sim: {hit.cosine_similarity.toFixed(3)}</span>
+                            )}
+                            {hit.lexical_rank !== null && (
+                              <span>FTS: {hit.lexical_rank.toFixed(3)}</span>
+                            )}
+                            {hit.coverage_score !== undefined && (
+                              <span>Cov: {(hit.coverage_score * 100).toFixed(0)}%</span>
+                            )}
+                            <span className="text-cyan-400">RRF: {hit.rrf_score.toFixed(4)}</span>
+                          </div>
+
+                          <pre className="text-[11px] font-mono text-slate-300 bg-slate-900/60 p-2.5 rounded-lg whitespace-pre-wrap leading-relaxed border border-white/[0.04] overflow-x-auto">
+                            {hit.text}
+                          </pre>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

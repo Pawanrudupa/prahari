@@ -15,7 +15,8 @@
     "in_scope": true,
     "expected_document": "payments-fraud-policy.md",
     "expected_section": "Section 2.2 Dual-Authorization Escalation Threshold",
-    "expected_text_contains": "INR 50,000"
+    "expected_text_contains": "INR 50,000",
+    "rule_mapping": "R2_TRANSACTION_THRESHOLD"
   },
   {
     "id": "qa-dev-003",
@@ -24,7 +25,8 @@
     "in_scope": true,
     "expected_document": "payments-fraud-policy.md",
     "expected_section": "Section 3.1 Cumulative Daily Spend Cap",
-    "expected_text_contains": "INR 250,000"
+    "expected_text_contains": "INR 250,000",
+    "rule_mapping": "LIMITS_BRAKE"
   },
   {
     "id": "qa-dev-004",
@@ -42,7 +44,8 @@
     "in_scope": true,
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 3.2 Bulk Data Export Prohibitions",
-    "expected_text_contains": "100 rows"
+    "expected_text_contains": "100 rows",
+    "rule_mapping": "R3_BULK_EXPORT"
   },
   {
     "id": "qa-dev-006",
@@ -51,7 +54,8 @@
     "in_scope": true,
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 3.1 Masking of Personal Identifiers",
-    "expected_text_contains": "final 4 digits"
+    "expected_text_contains": "final 4 digits",
+    "rule_mapping": "R1_PII_MASKING"
   },
   {
     "id": "qa-dev-007",
@@ -180,6 +184,159 @@
     "expected_text_contains": null
   },
   {
+    "id": "qa-dev-021",
+    "split": "dev",
+    "query": "How many payment operations can an autonomous system trigger in a one-minute interval before triggering velocity safeguards?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 3.2",
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-022",
+    "split": "dev",
+    "query": "Which digits of a customer telephone number are permitted to remain visible when displayed by a support bot?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 3.1",
+    "expected_text_contains": null,
+    "rule_mapping": "R1_PII_MASKING"
+  },
+  {
+    "id": "qa-dev-023",
+    "split": "dev",
+    "query": "Can an agent assigned the Support persona make adjustments to outstanding customer invoices?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 2.1",
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-024",
+    "split": "dev",
+    "query": "Following a user's opt-out request, what is the maximum time window permitted for an agent to stop querying that individual's information?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 3.1",
+    "expected_text_contains": null,
+    "rule_mapping": "R4_CONSENT_REVOCATION"
+  },
+  {
+    "id": "qa-dev-025",
+    "split": "dev",
+    "query": "What approval is necessary for an automated refund request valuing 8,000 rupees?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "payments-fraud-policy.md",
+    "expected_section": "Section 4.2",
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-026",
+    "split": "dev",
+    "query": "Under what conditions may decrypted user attributes be stored in a permanent vector index?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "data-handling-policy.md",
+    "expected_section": "Section 4.1",
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-027",
+    "split": "dev",
+    "query": "How many administrator approvals are mandated before altering a live governance policy rule set?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 4.1",
+    "expected_text_contains": null,
+    "rule_mapping": "R6_POLICY_ADMIN_SIGNOFF"
+  },
+  {
+    "id": "qa-dev-028",
+    "split": "dev",
+    "query": "Is an automated service allowed to repurpose routine customer support logs for generative model training without fresh permission?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 2.1",
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-029",
+    "split": "dev",
+    "query": "What is the expiration lifespan assigned to agent authentication bearer tokens?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "access-control-policy.md",
+    "expected_section": "Section 3.1",
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-030",
+    "split": "dev",
+    "query": "What obligations must be validated before transferring customer records to servers located in a different jurisdiction?",
+    "in_scope": true,
+    "category": "heldout_promoted_dev",
+    "expected_document": "consent-governance-policy.md",
+    "expected_section": "Section 4.2",
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-031",
+    "split": "dev",
+    "query": "How many calendar days does a merchant have to respond to a chargeback dispute before automatic debit occurs?",
+    "in_scope": false,
+    "category": "near_domain_negative",
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-032",
+    "split": "dev",
+    "query": "Does the gateway require AES-256-GCM or ChaCha20-Poly1305 for encrypting database tables at rest?",
+    "in_scope": false,
+    "category": "near_domain_negative",
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-033",
+    "split": "dev",
+    "query": "What specific consent disclosures are required prior to capturing and verifying user facial geometry or fingerprint biometrics?",
+    "in_scope": false,
+    "category": "near_domain_negative",
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-034",
+    "split": "dev",
+    "query": "What is the maximum allowed temperature setting for an agent performing financial calculations?",
+    "in_scope": false,
+    "category": "near_domain_negative",
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
+    "id": "qa-dev-035",
+    "split": "dev",
+    "query": "How frequently must human administrators with break-glass permissions undergo criminal background re-verification?",
+    "in_scope": false,
+    "category": "near_domain_negative",
+    "expected_document": null,
+    "expected_section": null,
+    "expected_text_contains": null
+  },
+  {
     "id": "qa-test-021",
     "split": "test",
     "query": "Can an automated agent issue a direct customer refund of 15,000 rupees without authorization?",
@@ -222,7 +379,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 4.2 Emergency Revocation",
-    "expected_text_contains": "unilateral authority"
+    "expected_text_contains": "unilateral authority",
+    "rule_mapping": "R5_EMERGENCY_REVOCATION"
   },
   {
     "id": "qa-test-026",

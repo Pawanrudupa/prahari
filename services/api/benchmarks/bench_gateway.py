@@ -556,12 +556,11 @@ def main() -> None:
     p95 = results["p95"]
     interf_p95 = interf.get("p95", 0.0) if interf else 0.0
 
-    # Uncontended sequential gateway budget is strictly 50 ms.
-    # Load-interference under concurrent embedding and search traffic budget is 75 ms.
-    if p95 < 50.0 and interf_p95 < 75.0:
+    # Gateway budget is strictly 50 ms p95 (both uncontended and under load interference)
+    if p95 < 50.0 and interf_p95 < 50.0:
         print(
             f"\nRESULT: PASS - Sequential p95 ({p95:.2f} ms < 50 ms) and Interference p95 "
-            f"({interf_p95:.2f} ms < 75 ms) are within budget!"
+            f"({interf_p95:.2f} ms < 50 ms) are strictly within budget!"
         )
         print("=" * 68)
     else:

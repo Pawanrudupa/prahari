@@ -11,6 +11,7 @@ logger = logging.getLogger("prahari.rag.embeddings")
 
 # Bounded thread pool so embedding inference never blocks the FastAPI async event loop
 _EMBED_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="fastembed_worker")
+_EMBED_SEMAPHORE = asyncio.Semaphore(2)
 
 _MODEL_INSTANCE: Any = None
 _RAG_READY: bool = False
@@ -26,8 +27,9 @@ def _load_model_sync() -> Any:
     from fastembed import TextEmbedding
 
     # Model name: BAAI/bge-small-en-v1.5 (384-dimensional dense vectors)
-    logger.info("Initializing FastEmbed BGE-small-en-v1.5 ONNX runtime...")
-    model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    # Cap intra-op threads to 1 to prevent CPU starvation on gateway request workers
+    logger.info("Initializing FastEmbed BGE-small-en-v1.5 ONNX runtime (threads=1)...")
+    model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5", threads=1)
     logger.info("FastEmbed model initialized successfully.")
     return model
 
@@ -59,12 +61,13 @@ def _embed_texts_sync(model: Any, texts: list[str]) -> list[list[float]]:
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Compute dense embeddings for a batch of strings asynchronously."""
+    """Compute dense embeddings for a batch of strings asynchronously with concurrency limit."""
     if not texts:
         return []
-    model = await get_embedding_model()
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_EMBED_EXECUTOR, _embed_texts_sync, model, texts)
+    async with _EMBED_SEMAPHORE:
+        model = await get_embedding_model()
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_EMBED_EXECUTOR, _embed_texts_sync, model, texts)
 
 
 async def embed_query(query: str) -> list[float]:

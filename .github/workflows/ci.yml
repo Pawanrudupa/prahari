@@ -67,7 +67,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/fastembed
-          key: fastembed-${{ runner.os }}-bge-small-en-v1.5
+          key: fastembed-${{ runner.os }}-models-v2
       - name: "Policy RAG Deterministic Evaluation"
         run: uv run python evals/run_eval.py --ci
 

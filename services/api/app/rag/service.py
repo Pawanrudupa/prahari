@@ -16,12 +16,17 @@ from app.models.policy import PolicyChunk, PolicyDocument
 from app.rag.chunker import chunk_document
 from app.rag.constants import (
     CANDIDATE_POOL_MULTIPLIER,
+    DEFAULT_C_MIN,
+    DEFAULT_MAX_RARE_DF,
     DEFAULT_TAU_LEXICAL,
     DEFAULT_TAU_VECTOR,
     DEFAULT_TEXT_WEIGHT,
     DEFAULT_VECTOR_WEIGHT,
     RRF_K,
+    TIER_RELATED_UNVERIFIED,
+    TIER_STRONG_MATCH,
 )
+from app.rag.coverage import build_corpus_df, evaluate_query_chunk_coverage
 from app.rag.embeddings import embed_query, embed_texts
 from app.rag.extractor import (
     MAX_FILE_SIZE_BYTES,
@@ -30,6 +35,7 @@ from app.rag.extractor import (
     extract_markdown,
     extract_pdf,
 )
+from app.rag.reranker import rerank_candidates
 from app.schemas.rag import (
     PolicyChunkResponse,
     PolicyDocumentResponse,
@@ -229,6 +235,45 @@ def build_fts_query_string(query: str) -> str:
     return " | ".join(safe_terms)
 
 
+_CORPUS_CACHE: dict[str, Any] = {"term_dfs": {}, "total_chunks": 0, "last_updated": 0.0}
+
+
+def invalidate_corpus_cache() -> None:
+    """Invalidate cached corpus term frequencies when documents are added or archived."""
+    global _CORPUS_CACHE
+    _CORPUS_CACHE = {"term_dfs": {}, "total_chunks": 0, "last_updated": 0.0}
+
+
+async def get_corpus_df(session: AsyncSession) -> tuple[dict[str, int], int]:
+    """Retrieve document frequencies across active chunks, using 60s in-memory cache."""
+    global _CORPUS_CACHE
+    import time
+
+    now = time.time()
+    if _CORPUS_CACHE["term_dfs"] and (now - _CORPUS_CACHE["last_updated"] < 60.0):
+        return _CORPUS_CACHE["term_dfs"], _CORPUS_CACHE["total_chunks"]
+
+    stmt = (
+        select(PolicyChunk.text, PolicyChunk.section_title, PolicyDocument.title)
+        .join(PolicyDocument, PolicyChunk.document_id == PolicyDocument.id)
+        .where(PolicyDocument.status == "active")
+    )
+    res = await session.execute(stmt)
+    rows = res.all()
+    corpus_texts: list[str] = []
+    for text_val, sec_title, doc_title in rows:
+        parts = [doc_title or "", sec_title or "", text_val or ""]
+        corpus_texts.append(" ".join(parts))
+
+    term_dfs, total_chunks = build_corpus_df(corpus_texts)
+    _CORPUS_CACHE = {
+        "term_dfs": term_dfs,
+        "total_chunks": total_chunks,
+        "last_updated": now,
+    }
+    return term_dfs, total_chunks
+
+
 class DuplicateDocumentError(Exception):
     """Raised when an identical policy document (by SHA-256 checksum) already exists."""
 
@@ -284,11 +329,17 @@ async def ingest_policy_document(
     if not chunks_data:
         raise ValueError("Document yielded no usable text chunks")
 
-    # 4. Generate embeddings (offloaded to thread pool)
-    chunk_texts = [c["text"] for c in chunks_data]
+    # 4. Generate embeddings with document title and heading path context
+    doc_clean_title = title.strip() or filename
+    chunk_embed_texts = [
+        f"{doc_clean_title} > {c['section_title']}\n\n{c['text']}".strip()
+        if c.get("section_title")
+        else f"{doc_clean_title}\n\n{c['text']}".strip()
+        for c in chunks_data
+    ]
     embeddings: list[list[float]] | None = None
     try:
-        embeddings = await embed_texts(chunk_texts)
+        embeddings = await embed_texts(chunk_embed_texts)
     except Exception as exc:
         logger.warning(
             "Dense embedding generation failed; document will be indexed "
@@ -327,8 +378,9 @@ async def ingest_policy_document(
             meta=chunk_meta,
         )
         if is_postgres:
-            # Set PostgreSQL TSVector via server expression
-            chunk.tsv = func.to_tsvector("english", c["text"])
+            # Set PostgreSQL TSVector across document title, section hierarchy, and chunk text
+            lexical_payload = f"{doc_clean_title} {c['section_title'] or ''} {c['text']}"
+            chunk.tsv = func.to_tsvector("english", lexical_payload)
         session.add(chunk)
 
     # 7. Append immutable audit event
@@ -345,6 +397,7 @@ async def ingest_policy_document(
     await append_audit_log(session, audit_payload)
     await session.commit()
     await session.refresh(doc)
+    invalidate_corpus_cache()
     return doc
 
 
@@ -468,6 +521,7 @@ async def archive_policy_document(
     await append_audit_log(session, audit_payload)
     await session.commit()
     await session.refresh(doc)
+    invalidate_corpus_cache()
 
     return PolicyDocumentResponse(
         id=doc.id,
@@ -657,7 +711,7 @@ async def _search_postgres(
     else:
         retrieval_mode = "lexical_only"
 
-    scored_items: list[RAGSearchResultItem] = []
+    candidate_dicts: list[dict[str, Any]] = []
     for chunk_id in all_chunk_ids:
         v_data = vector_candidates.get(chunk_id)
         l_data = lexical_candidates.get(chunk_id)
@@ -676,24 +730,84 @@ async def _search_postgres(
             lex_rank = l_data["lexical_rank"]
             rrf_score += text_weight * (1.0 / (RRF_K + l_data["lexical_pos"]))
 
-        scored_items.append(
+        candidate_dicts.append(
+            {
+                "chunk_id": chunk_id,
+                "document_id": sample["document_id"],
+                "document_title": sample["document_title"],
+                "section_title": sample["section_title"],
+                "text": sample["text"],
+                "checksum_sha256": sample["checksum_sha256"],
+                "cosine_sim": cos_sim,
+                "lexical_rank": lex_rank,
+                "rrf_score": rrf_score,
+            }
+        )
+
+    # Initial sort descending by RRF score
+    candidate_dicts.sort(key=lambda item: item["rrf_score"], reverse=True)
+
+    # D. Optional Cross-Encoder Reranking
+    candidate_dicts = await rerank_candidates(
+        query=query,
+        candidates=candidate_dicts,
+        top_k=candidate_k,
+    )
+
+    # E. Answerability Gate: IDF-weighted query-term coverage & rare-term match
+    term_dfs, total_chunks = await get_corpus_df(session)
+    results: list[RAGSearchResultItem] = []
+
+    for cand in candidate_dicts:
+        cov_res = evaluate_query_chunk_coverage(
+            query=query,
+            chunk_text=cand["text"],
+            chunk_section_title=cand["section_title"],
+            document_title=cand["document_title"],
+            term_dfs=term_dfs,
+            total_chunks=total_chunks,
+            c_min=DEFAULT_C_MIN,
+            max_rare_df=DEFAULT_MAX_RARE_DF,
+        )
+        cos_sim = cand.get("cosine_sim")
+        lex_rank = cand.get("lexical_rank")
+
+        passes_vector = cos_sim is not None and cos_sim >= tau_vector
+        passes_lexical = lex_rank is not None and lex_rank >= tau_lexical
+
+        if cov_res["is_strong_match"] and (passes_vector or passes_lexical):
+            tier = TIER_STRONG_MATCH
+        else:
+            tier = TIER_RELATED_UNVERIFIED
+
+        results.append(
             RAGSearchResultItem(
-                chunk_id=chunk_id,
-                document_id=sample["document_id"],
-                document_title=sample["document_title"],
-                section_title=sample["section_title"],
-                text=sample["text"],
-                checksum_sha256=sample["checksum_sha256"],
+                chunk_id=cand["chunk_id"],
+                document_id=cand["document_id"],
+                document_title=cand["document_title"],
+                section_title=cand["section_title"],
+                text=cand["text"],
+                checksum_sha256=cand["checksum_sha256"],
                 cosine_similarity=round(cos_sim, 4) if cos_sim is not None else None,
                 lexical_rank=round(lex_rank, 4) if lex_rank is not None else None,
-                rrf_score=round(rrf_score, 6),
-                grounded=True,
+                rrf_score=round(cand["rrf_score"], 6),
+                coverage_score=cov_res["coverage_score"],
+                rare_term_matched=cov_res["rare_term_matched"],
+                match_tier=tier,
+                rerank_score=cand.get("rerank_score"),
+                grounded=False,
             )
         )
 
-    # Sort descending by RRF score
-    scored_items.sort(key=lambda item: item.rrf_score, reverse=True)
-    return retrieval_mode, scored_items[:top_k]
+    # Sort results by relevance: rerank_score if present, else rrf_score
+    results.sort(
+        key=lambda item: (
+            item.rerank_score if item.rerank_score is not None else 0.0,
+            item.rrf_score,
+        ),
+        reverse=True,
+    )
+    return retrieval_mode, results[:top_k]
 
 
 async def _search_sqlite(
@@ -731,8 +845,24 @@ async def _search_sqlite(
         return "empty", []
 
     scored.sort(key=lambda s: s[0], reverse=True)
+
+    # Compute corpus dfs for answerability gate
+    corpus_texts = [f"{d.title} {c.section_title or ''} {c.text}" for _, c, d in scored]
+    term_dfs, total_chunks = build_corpus_df(corpus_texts)
+
     items: list[RAGSearchResultItem] = []
     for rank_idx, (score, chunk, doc) in enumerate(scored[:top_k], start=1):
+        cov_res = evaluate_query_chunk_coverage(
+            query=query,
+            chunk_text=chunk.text,
+            chunk_section_title=chunk.section_title,
+            document_title=doc.title,
+            term_dfs=term_dfs,
+            total_chunks=total_chunks,
+            c_min=DEFAULT_C_MIN,
+            max_rare_df=DEFAULT_MAX_RARE_DF,
+        )
+        tier = TIER_STRONG_MATCH if cov_res["is_strong_match"] else TIER_RELATED_UNVERIFIED
         items.append(
             RAGSearchResultItem(
                 chunk_id=chunk.id,
@@ -743,7 +873,10 @@ async def _search_sqlite(
                 checksum_sha256=chunk.checksum_sha256,
                 lexical_rank=round(score * 0.1, 4),
                 rrf_score=round(text_weight * (1.0 / (RRF_K + rank_idx)), 6),
-                grounded=True,
+                coverage_score=cov_res["coverage_score"],
+                rare_term_matched=cov_res["rare_term_matched"],
+                match_tier=tier,
+                grounded=False,
             )
         )
     return "lexical_only", items

@@ -57,7 +57,11 @@ class RAGSearchResultItem(BaseModel):
     cosine_similarity: float | None = None
     lexical_rank: float | None = None
     rrf_score: float
-    grounded: bool = True
+    coverage_score: float = 0.0
+    rare_term_matched: bool = False
+    match_tier: Literal["strong_match", "related_unverified"] = "strong_match"
+    rerank_score: float | None = None
+    grounded: bool = False
 
 
 class RAGSearchResponse(BaseModel):

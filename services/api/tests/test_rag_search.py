@@ -48,7 +48,8 @@ Transactions under INR 10,000 may proceed autonomously.
     top_hit = data["results"][0]
     assert "Dual Authorization" in (top_hit["section_title"] or "")
     assert "50,000" in top_hit["text"]
-    assert top_hit["grounded"] is True
+    assert top_hit["match_tier"] in ("strong_match", "related_unverified")
+    assert top_hit["grounded"] is False  # Reserved exclusively for 4b declared sources
     assert top_hit["rrf_score"] > 0
 
 

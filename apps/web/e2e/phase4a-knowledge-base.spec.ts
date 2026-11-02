@@ -66,21 +66,30 @@ test.describe("Phase 4a Knowledge Base & Policy RAG E2E", () => {
     await expect(page.getByText(/Sequential Chunks:/i)).not.toBeVisible();
     await page.waitForTimeout(1000);
 
-    // 5. Grounded Query with Full Result Visible
+    // 5. Tier 1: Strong Match
     const searchInput = page.getByPlaceholder("Ask a policy question...");
     await searchInput.fill("What is the maximum single-transaction limit for an automated payment agent?");
     await page.getByRole("button", { name: /Search Policy Corpus/i }).click();
 
-    // Verify hit
-    await expect(page.getByText(/Grounded/i).first()).toBeVisible({ timeout: 8000 });
+    // Verify Strong Match badge and clause excerpt
+    await expect(page.getByText(/Strong match/i).first()).toBeVisible({ timeout: 8000 });
     await expect(page.getByText(/INR 10,000/i).first()).toBeVisible();
     await page.waitForTimeout(2000);
 
-    // 6. Near-Domain Refusal
+    // 5b. Tier 2: Related, May Not Answer Your Question
+    await searchInput.fill("What is the standard timeframe for disputing a merchant chargeback under the refund policy?");
+    await page.getByRole("button", { name: /Search Policy Corpus/i }).click();
+
+    // Verify amber badge and warning callout
+    await expect(page.getByText(/Related, may not answer your question/i).first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText(/Relevance Warning:/i).first()).toBeVisible();
+    await page.waitForTimeout(2000);
+
+    // 6. Tier 3: No Relevant Clause (Refusal)
     await searchInput.fill("What is the maritime salvage compensation formula for abandoned cargo vessels?");
     await page.getByRole("button", { name: /Search Policy Corpus/i }).click();
 
-    await expect(page.getByText(/Refusal: No Grounded Policy Clauses/i)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText(/No relevant clause \(Refusal\)/i)).toBeVisible({ timeout: 8000 });
     await page.waitForTimeout(2000);
 
     // 7. Duplicate Upload Rejected

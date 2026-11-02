@@ -22,6 +22,8 @@ export interface PolicyChunkItem {
   meta: Record<string, unknown> | null;
 }
 
+export type MatchTier = "strong_match" | "related_unverified";
+
 export interface RAGSearchResult {
   chunk_id: string;
   document_id: string;
@@ -32,7 +34,11 @@ export interface RAGSearchResult {
   cosine_similarity: number | null;
   lexical_rank: number | null;
   rrf_score: number;
-  grounded: boolean;
+  coverage_score?: number;
+  rare_term_matched?: boolean;
+  match_tier?: MatchTier;
+  rerank_score?: number | null;
+  grounded?: boolean;
 }
 
 export interface RAGSearchResponse {
