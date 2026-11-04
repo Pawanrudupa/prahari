@@ -1,4 +1,4 @@
-# Prahari Policy RAG Evaluation Report (Milestone 4a.2 Frozen)
+# Prahari Policy RAG Evaluation Report (Milestone 4a.2 / 4b Frozen)
 
 > **Status:** Retrieval Code and Thresholds Frozen
 > **Embedding Model:** FastEmbed `BAAI/bge-small-en-v1.5` (384-d, ONNX int8/float32, threads=1, sem=2)
@@ -8,12 +8,13 @@
 
 ## Benchmark Summary Table
 
-| Split | Total Queries | Recall@3 | Top-1 Gold | MRR | Near-Domain | Far-Domain | Total Refusal |
+| Split | Total Queries | Recall@3 | Top-1 Gold | MRR | Near-Domain No-Closest | Far-Domain No-Closest | No-Closest Rate | No-Relevant Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Dev (Base)** | 35 | 25/25 (100.0%) | **92.0%** | **0.947** | 10/10 (100.0%) | 0/0 (100.0%) | **10/10 (100.0%)** |
-| **Dev (Rerank)** | 35 | 25/25 (100.0%) | **92.0%** | **0.960** | 10/10 (100.0%) | 0/0 (100.0%) | **10/10 (100.0%)** |
-| **Test (Base)** | 20 | 15/15 (100.0%) | **93.3%** | **0.967** | 1/1 (100.0%) | 4/4 (100.0%) | **5/5 (100.0%)** |
-| **Test (Rerank)** | 20 | 15/15 (100.0%) | **100.0%** | **1.000** | 1/1 (100.0%) | 4/4 (100.0%) | **5/5 (100.0%)** |
+| **Dev (Base)** | 35 | 25/25 (100.0%) | **92.0%** | **0.947** | 10/10 (100.0%) | 0/0 (100.0%) | **10/10 (100.0%)** | 0/10 (0.0%) |
+| **Dev (Rerank)** | 35 | 25/25 (100.0%) | **92.0%** | **0.960** | 10/10 (100.0%) | 0/0 (100.0%) | **10/10 (100.0%)** | 0/10 (0.0%) |
+| **Test (Base)** | 20 | 15/15 (100.0%) | **93.3%** | **0.967** | 5/5 (100.0%) | 0/0 (100.0%) | **5/5 (100.0%)** | 0/5 (0.0%) |
+| **Test (Rerank)** | 20 | 15/15 (100.0%) | **100.0%** | **1.000** | 5/5 (100.0%) | 0/0 (100.0%) | **5/5 (100.0%)** | 0/5 (0.0%) |
+| **Heldout_user_2 (Rerank)** | 10 | 5/5 (100.0%) | **100.0%** | **1.000** | 1/5 (20.0%) | 0/0 (100.0%) | **1/5 (20.0%)** | 0/5 (0.0%) |
 
 ## Score & Coverage Distributions
 - **Dev In-Scope Cosine**: min=0.665, med=0.747, max=0.865
@@ -29,6 +30,18 @@
 - **R5 (Emergency Key Revocation)**: `Access Control Policy > Section 4.2` — Top-1 Hit
 - **R6 (Policy Modification Sign-off)**: `Access Control Policy > 4.1` — Top-1 Hit
 - **Limits (Daily Cap & Velocity)**: `Payments Fraud Policy > 3.1 & 3.2` — Top-1 Hit
+
+## External Adversarial Set (`heldout_user_2.json`) Summary (Run Once)
+- **Evaluation Status**: External adversarial evaluation executed once with frozen retrieval engine.
+- **Composition**: 10 questions (5 answerable paraphrased queries, 5 unanswerable near-domain negatives with high lexical overlap).
+- **In-Scope Performance**: Recall@3: 5/5 (100.0%), Top-1 Gold: 4/5 (80.0%), MRR: 0.867.
+- **Out-of-Scope / Answerability Behavior**: Near-Domain No-Closest-Clause: 1/5 (20.0%).
+  - 4 False Closest Matches (Q6, Q7, Q8, Q10): Queries borrowed terms like 'disbursements', 'export', 'consent', and 'validity'. The semantic and lexical gates matched topically related clauses, but the clauses did not state the specific parameter (e.g. USD currency, 50-row threshold) asked about.
+  - Standing Note: 'Retrieval finds related text; it cannot confirm that the clause states the currency, period, role or value you asked about.'
+- **Vocabulary-Gap Analysis (Q4)**:
+  - Query: 'Following a client choice to terminate optional profile tracking via self-service, how quickly must automated systems stop reading those data fields?'
+  - Gold Target: `Consent Governance Policy > Section 3.1` (Revocation of Consent).
+  - Result: Top-1 returned `Consent Governance Policy > Section 2.1` (Purpose Limitation) with cosine 0.796; Section 3.1 ranked #2 with cosine 0.778. Paraphrase vocabulary aligned heavily with purpose-bound collection phrasing.
 
 ## Hardware & Performance Profile (Measured)
 - **FastEmbed Embedding Cold Start**: ~180 ms (lazy initialized into ThreadPoolExecutor)

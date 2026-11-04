@@ -17,8 +17,14 @@ import {
   Play,
   FileCheck2,
   AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Sparkles,
+  Info,
 } from "lucide-react";
 import { useAuthStore } from "../../stores/useAuthStore";
+import { fetchDecisionExplanation } from "../../services/ragApi";
+import type { DecisionExplanationResponse } from "../../types/rag";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { Card } from "../../components/ui/Card";
@@ -107,6 +113,26 @@ export function DecisionsPage() {
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
   const [copiedPayload, setCopiedPayload] = useState(false);
   const [copiedHeadHash, setCopiedHeadHash] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<"details" | "explain">("details");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [copiedExcerpt, setCopiedExcerpt] = useState<string | null>(null);
+
+  // Query: Decision Explanation (Milestone 4b)
+  const {
+    data: explanation,
+    isLoading: isExplainLoading,
+    error: explainError,
+    refetch: refetchExplanation,
+  } = useQuery<DecisionExplanationResponse>({
+    queryKey: ["decision-explanation", selectedDecision?.id],
+    queryFn: async () => {
+      if (!selectedDecision) throw new Error("No decision selected");
+      const rawPayload = selectedDecision.raw_payload as Record<string, any> | undefined;
+      const targetId = rawPayload?.decision_id || selectedDecision.id;
+      return fetchDecisionExplanation(targetId, sessionToken);
+    },
+    enabled: !!selectedDecision && drawerTab === "explain",
+  });
 
   // Query: Decisions list
   const {
@@ -427,6 +453,7 @@ export function DecisionsPage() {
                   <div
                     key={item.id}
                     onClick={() => setSelectedDecision(item)}
+                    data-testid={`decision-row-${item.seq}`}
                     style={{
                       position: "absolute",
                       top: 0,
@@ -534,92 +561,343 @@ export function DecisionsPage() {
               </div>
               <button
                 onClick={() => setSelectedDecision(null)}
-                className="p-1 rounded-lg hover:bg-white/[0.05] text-slate-400 hover:text-slate-200"
+                data-testid="close-decision-drawer-btn"
+                className="p-1 rounded-lg hover:bg-white/[0.05] text-slate-400 hover:text-slate-200 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Core Fields */}
-            <div className="space-y-3 text-xs">
-              <div className="flex justify-between py-1 border-b border-white/[0.04]">
-                <span className="text-slate-500">Agent:</span>
-                <span className="font-semibold text-slate-200">{selectedDecision.agent_name}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-white/[0.04]">
-                <span className="text-slate-500">Target Tool:</span>
-                <span className="font-mono text-sky-400">{selectedDecision.tool}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-white/[0.04]">
-                <span className="text-slate-500">Rule Trigger:</span>
-                <span className="font-mono text-slate-300">
-                  {selectedDecision.rule_id || "default_deny"}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-white/[0.04]">
-                <span className="text-slate-500">Decision Reason:</span>
-                <span className="text-slate-300 max-w-xs text-right">
-                  {selectedDecision.reason || "N/A"}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-white/[0.04]">
-                <span className="text-slate-500">Detected PII:</span>
-                <span>
-                  {selectedDecision.data_classes.length > 0 ? (
-                    selectedDecision.data_classes.map((cls) => (
-                      <span
-                        key={cls}
-                        className="px-1.5 py-0.5 ml-1 bg-amber-500/20 text-amber-300 rounded text-[10px] font-mono"
-                      >
-                        {cls}
+            {/* Drawer Tabs */}
+            <div className="flex border-b border-white/[0.08] text-xs">
+              <button
+                type="button"
+                onClick={() => setDrawerTab("details")}
+                className={`flex-1 py-2 font-semibold border-b-2 transition-colors cursor-pointer ${
+                  drawerTab === "details"
+                    ? "border-cyan-400 text-cyan-300"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Details &amp; Audit Chain
+              </button>
+              <button
+                type="button"
+                data-testid="tab-explain-decision"
+                onClick={() => setDrawerTab("explain")}
+                className={`flex-1 py-2 font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+                  drawerTab === "explain"
+                    ? "border-cyan-400 text-cyan-300"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                Explain Decision
+              </button>
+            </div>
+
+            {drawerTab === "details" ? (
+              <>
+                {/* Core Fields */}
+                <div className="space-y-3 text-xs">
+                  <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                    <span className="text-slate-500">Agent:</span>
+                    <span className="font-semibold text-slate-200">{selectedDecision.agent_name}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                    <span className="text-slate-500">Target Tool:</span>
+                    <span className="font-mono text-sky-400">{selectedDecision.tool}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                    <span className="text-slate-500">Rule Trigger:</span>
+                    <span className="font-mono text-slate-300">
+                      {selectedDecision.rule_id || "default_deny"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                    <span className="text-slate-500">Decision Reason:</span>
+                    <span className="text-slate-300 max-w-xs text-right">
+                      {selectedDecision.reason || "N/A"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                    <span className="text-slate-500">Detected PII:</span>
+                    <span>
+                      {selectedDecision.data_classes.length > 0 ? (
+                        selectedDecision.data_classes.map((cls) => (
+                          <span
+                            key={cls}
+                            className="px-1.5 py-0.5 ml-1 bg-amber-500/20 text-amber-300 rounded text-[10px] font-mono"
+                          >
+                            {cls}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-slate-600 font-mono">none</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Cryptographic Hashes */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">
+                    Cryptographic Audit Integrity
+                  </h4>
+                  <div className="p-3 bg-slate-900/60 rounded-xl border border-white/[0.06] space-y-2 text-[11px] font-mono">
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">RECORD HASH (SHA-256):</span>
+                      <span className="text-emerald-400 break-all">{selectedDecision.hash}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">PREVIOUS RECORD HASH:</span>
+                      <span className="text-slate-400 break-all">{selectedDecision.prev_hash}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">ARGUMENTS HASH:</span>
+                      <span className="text-slate-400 break-all">{selectedDecision.args_hash}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Raw JSON Payload */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">
+                      Canonical Audit Payload
+                    </h4>
+                    <Button variant="ghost" size="sm" onClick={handleCopyPayload}>
+                      {copiedPayload ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                  <pre className="p-3 bg-black/60 rounded-xl border border-white/[0.08] text-[10px] font-mono text-slate-300 overflow-x-auto max-h-48 select-all">
+                    {JSON.stringify(selectedDecision.raw_payload, null, 2)}
+                  </pre>
+                </div>
+              </>
+            ) : (
+              /* Explain Tab */
+              <div className="space-y-5" data-testid="decision-explain-panel">
+                {isExplainLoading && (
+                  <div className="space-y-4 py-4">
+                    <div className="h-6 w-3/4 bg-slate-800/60 animate-pulse rounded" />
+                    <div className="h-28 w-full bg-slate-900/60 animate-pulse rounded-xl" />
+                    <div className="h-32 w-full bg-slate-900/60 animate-pulse rounded-xl" />
+                  </div>
+                )}
+
+                {explainError && (
+                  <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/20 text-rose-300 text-xs space-y-2">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <AlertCircle className="w-4 h-4 text-rose-400" />
+                      Failed to Load Explanation
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">
+                      {(explainError as Error).message || "An unexpected error occurred while resolving explanation snapshot."}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => refetchExplanation()}
+                      className="px-3 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-[11px] font-semibold transition-colors cursor-pointer"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {explanation && (
+                  <>
+                    {/* Header Grounding Status & Standing Note */}
+                    <div className="flex items-center justify-between pb-1 border-b border-white/[0.06]">
+                      <div>
+                        {explanation.grounded ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            Grounded in Declared Policy
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            No Declared Source
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {explanation.explainer_version} &bull; {explanation.as_of}
                       </span>
-                    ))
-                  ) : (
-                    <span className="text-slate-600 font-mono">none</span>
-                  )}
-                </span>
-              </div>
-            </div>
+                    </div>
 
-            {/* Cryptographic Hashes */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">
-                Cryptographic Audit Integrity
-              </h4>
-              <div className="p-3 bg-slate-900/60 rounded-xl border border-white/[0.06] space-y-2 text-[11px] font-mono">
-                <div>
-                  <span className="text-slate-500 block text-[10px]">RECORD HASH (SHA-256):</span>
-                  <span className="text-emerald-400 break-all">{selectedDecision.hash}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px]">PREVIOUS RECORD HASH:</span>
-                  <span className="text-slate-400 break-all">{selectedDecision.prev_hash}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px]">ARGUMENTS HASH:</span>
-                  <span className="text-slate-400 break-all">{selectedDecision.args_hash}</span>
-                </div>
-              </div>
-            </div>
+                    <div className="p-2.5 rounded-lg bg-blue-950/30 border border-blue-500/20 text-[11px] text-blue-300 leading-relaxed">
+                      <span className="font-semibold text-blue-200">Standing Note:</span> {explanation.standing_note}
+                    </div>
 
-            {/* Raw JSON Payload */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">
-                  Canonical Audit Payload
-                </h4>
-                <Button variant="ghost" size="sm" onClick={handleCopyPayload}>
-                  {copiedPayload ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5" />
-                  )}
-                </Button>
+                    {/* Card 1: Why This Decision (Deterministic Evaluation) */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono flex items-center justify-between">
+                        <span>Why this Decision</span>
+                        <span className="text-[10px] text-slate-500 lowercase font-normal">deterministic policy engine</span>
+                      </h4>
+                      <div className="p-3 bg-slate-900/60 rounded-xl border border-white/[0.06] space-y-2 text-xs">
+                        <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                          <span className="text-slate-400">Rule Trigger:</span>
+                          <span className="font-mono text-cyan-400 font-semibold">{explanation.why.rule_id || "default_deny"}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-white/[0.04]">
+                          <span className="text-slate-400">Outcome &amp; Reason:</span>
+                          <span className="text-slate-200 font-mono text-right max-w-xs">{explanation.why.reason}</span>
+                        </div>
+                        {explanation.why.rule_description && (
+                          <div className="py-1 border-b border-white/[0.04] text-[11px] text-slate-400 leading-relaxed">
+                            {explanation.why.rule_description}
+                          </div>
+                        )}
+                        <div className="flex justify-between py-1 border-b border-white/[0.04] text-[11px]">
+                          <span className="text-slate-500">Evaluator:</span>
+                          <span className="font-mono text-slate-300">{explanation.why.evaluator}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-white/[0.04] text-[11px]">
+                          <span className="text-slate-500">Target Tool:</span>
+                          <span className="font-mono text-sky-400">{explanation.why.tool_name}</span>
+                        </div>
+                        <div className="flex justify-between py-1 text-[11px]">
+                          <span className="text-slate-500">Detected PII:</span>
+                          <span className="font-mono text-amber-300">
+                            {explanation.why.data_classes && explanation.why.data_classes.length > 0
+                              ? explanation.why.data_classes.join(", ")
+                              : "none"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card 2: Declared Policy Basis (Verified to exist) */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono flex items-center justify-between">
+                        <span>Declared Policy Basis</span>
+                        <span className="text-[10px] text-emerald-400 font-normal">authoritative</span>
+                      </h4>
+                      {explanation.declared_sources.length > 0 ? (
+                        <div className="space-y-2.5">
+                          {explanation.declared_sources.map((src) => (
+                            <div key={src.chunk_id} className="p-3 bg-slate-900/80 rounded-xl border border-emerald-500/20 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-semibold text-emerald-300">
+                                  {src.document_title} &gt; {src.section_title || src.section_id}
+                                </span>
+                                {src.is_archived && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                    Archived Document
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between">
+                                <span>{src.label}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`${src.document_title} - ${src.section_title}\n\n${src.excerpt}`);
+                                    setCopiedExcerpt(src.chunk_id);
+                                    setTimeout(() => setCopiedExcerpt(null), 2000);
+                                  }}
+                                  className="hover:text-cyan-400 text-slate-400 flex items-center gap-1 cursor-pointer"
+                                >
+                                  {copiedExcerpt === src.chunk_id ? (
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3 h-3" />
+                                  )}
+                                  <span>Copy</span>
+                                </button>
+                              </div>
+                              <pre className="p-2.5 bg-black/60 rounded-lg border border-white/[0.06] text-[11px] font-mono text-slate-200 whitespace-pre-wrap leading-relaxed select-text">
+                                {src.excerpt}
+                              </pre>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-slate-900/40 rounded-xl border border-white/[0.06] text-xs text-slate-400 flex items-start gap-2">
+                          <Info className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+                          <span>No declared source. Rule does not specify policy source mapping; suggestions below are topical only.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card 3: Topical Suggestions (Related, not authoritative) */}
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowSuggestions(!showSuggestions)}
+                        className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-white/[0.06] hover:border-white/10 text-xs font-mono text-slate-300 transition-colors cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2">
+                          {showSuggestions ? <ChevronDown className="w-4 h-4 text-cyan-400" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+                          Topical Clause Suggestions ({explanation.suggested_sources.length})
+                        </span>
+                        <span className="text-[10px] text-slate-500">Related, not authoritative</span>
+                      </button>
+
+                      {showSuggestions && (
+                        <div className="space-y-2 pt-1">
+                          {explanation.suggested_sources.length > 0 ? (
+                            explanation.suggested_sources.map((sug) => (
+                              <div key={sug.chunk_id} className="p-3 bg-slate-900/80 rounded-xl border border-white/[0.08] space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-xs font-semibold text-slate-200">
+                                    {sug.document_title} &gt; {sug.section_title || sug.section_id}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                                    {sug.match_tier === "closest_clause" ? "Closest clause" : "Weakly related"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                                  <span>
+                                    Sim: {sug.cosine_similarity !== null ? sug.cosine_similarity.toFixed(3) : "N/A"} &bull; Cov: {(sug.coverage_score * 100).toFixed(0)}%
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(`${sug.document_title} - ${sug.section_title}\n\n${sug.excerpt}`);
+                                      setCopiedExcerpt(sug.chunk_id);
+                                      setTimeout(() => setCopiedExcerpt(null), 2000);
+                                    }}
+                                    className="hover:text-cyan-400 text-slate-400 flex items-center gap-1 cursor-pointer"
+                                  >
+                                    {copiedExcerpt === sug.chunk_id ? (
+                                      <Check className="w-3 h-3 text-emerald-400" />
+                                    ) : (
+                                      <Copy className="w-3 h-3" />
+                                    )}
+                                    <span>Copy</span>
+                                  </button>
+                                </div>
+                                <pre className="p-2.5 bg-black/60 rounded-lg border border-white/[0.06] text-[11px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed select-text">
+                                  {sug.excerpt}
+                                </pre>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="p-3 bg-slate-900/40 rounded-xl border border-white/[0.06] text-xs text-slate-500">
+                              No topical clause matches found.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Snapshot Audit Footer */}
+                    <div className="pt-2 text-[10px] font-mono text-slate-500 flex justify-between border-t border-white/[0.04]">
+                      <span>Snapshot SHA: {explanation.snapshot_sha256.slice(0, 16)}...</span>
+                      <span>Corpus: {explanation.corpus_hash.slice(0, 12)}</span>
+                    </div>
+                  </>
+                )}
               </div>
-              <pre className="p-3 bg-black/60 rounded-xl border border-white/[0.08] text-[10px] font-mono text-slate-300 overflow-x-auto max-h-48 select-all">
-                {JSON.stringify(selectedDecision.raw_payload, null, 2)}
-              </pre>
-            </div>
+            )}
           </div>
 
           <div className="pt-4 border-t border-white/[0.08] flex justify-end">

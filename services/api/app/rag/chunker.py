@@ -16,10 +16,27 @@ from typing import TypedDict
 
 class ChunkItem(TypedDict):
     chunk_index: int
+    section_id: str | None
     section_title: str | None
     text: str
     checksum_sha256: str
     meta: dict[str, int | str | None]
+
+
+def extract_section_id(section_title: str | None, text: str = "") -> str | None:
+    """Extract a canonical section number (e.g. '3.1', '2.2', '1') from section title or heading."""
+    if section_title:
+        # Match section number patterns like "Section 2.1", "2.1", "Section 3 > 3.1"
+        matches = re.findall(r"(?:Section\s+)?(\d+(?:\.\d+)*)", section_title, re.IGNORECASE)
+        if matches:
+            return str(matches[-1])
+    if text:
+        text_matches = re.findall(
+            r"^#{1,4}\s+(?:Section\s+)?(\d+(?:\.\d+)*)", text, re.IGNORECASE | re.MULTILINE
+        )
+        if text_matches:
+            return str(text_matches[-1])
+    return None
 
 
 # Matches markdown headers like # Section 1 ..., ## Section 2.1 ..., or # Scope
@@ -73,10 +90,11 @@ def chunk_document(
         return [
             ChunkItem(
                 chunk_index=0,
+                section_id=None,
                 section_title="Preamble",
                 text=cleaned,
                 checksum_sha256=sha,
-                meta={"char_length": len(cleaned), "section": "Preamble"},
+                meta={"char_length": len(cleaned), "section": "Preamble", "section_id": None},
             )
         ]
 
@@ -119,10 +137,11 @@ def chunk_document(
         return [
             ChunkItem(
                 chunk_index=0,
+                section_id=None,
                 section_title="General",
                 text=cleaned,
                 checksum_sha256=sha,
-                meta={"char_length": len(cleaned), "section": "General"},
+                meta={"char_length": len(cleaned), "section": "General", "section_id": None},
             )
         ]
 
@@ -130,15 +149,21 @@ def chunk_document(
     global_index = 0
 
     for sec_title, sec_content in raw_sections:
+        sec_id = extract_section_id(sec_title, sec_content)
         if len(sec_content) <= target_size:
             sha = hashlib.sha256(sec_content.encode("utf-8")).hexdigest()
             chunks.append(
                 ChunkItem(
                     chunk_index=global_index,
+                    section_id=sec_id,
                     section_title=sec_title,
                     text=sec_content,
                     checksum_sha256=sha,
-                    meta={"char_length": len(sec_content), "section": sec_title},
+                    meta={
+                        "char_length": len(sec_content),
+                        "section": sec_title,
+                        "section_id": sec_id,
+                    },
                 )
             )
             global_index += 1
@@ -158,10 +183,15 @@ def chunk_document(
                     chunks.append(
                         ChunkItem(
                             chunk_index=global_index,
+                            section_id=sec_id,
                             section_title=sec_title,
                             text=chunk_text,
                             checksum_sha256=sha,
-                            meta={"char_length": len(chunk_text), "section": sec_title},
+                            meta={
+                                "char_length": len(chunk_text),
+                                "section": sec_title,
+                                "section_id": sec_id,
+                            },
                         )
                     )
                     global_index += 1
@@ -177,10 +207,15 @@ def chunk_document(
                 chunks.append(
                     ChunkItem(
                         chunk_index=global_index,
+                        section_id=sec_id,
                         section_title=sec_title,
                         text=chunk_text,
                         checksum_sha256=sha,
-                        meta={"char_length": len(chunk_text), "section": sec_title},
+                        meta={
+                            "char_length": len(chunk_text),
+                            "section": sec_title,
+                            "section_id": sec_id,
+                        },
                     )
                 )
                 global_index += 1

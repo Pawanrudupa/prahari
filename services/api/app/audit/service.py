@@ -37,6 +37,7 @@ def build_audit_payload(
     data_classes: list[str],
     outcome: str,
     action_id: UUID | None = None,
+    decision_id: UUID | str | None = None,
     session_id: UUID | None = None,
     rule_id: str | None = None,
     policy_version: int | None = None,
@@ -51,7 +52,7 @@ def build_audit_payload(
     args_canonical = canonical_json(args)
     args_hash = hashlib.sha256(args_canonical.encode("utf-8")).hexdigest()
 
-    return {
+    payload = {
         "event_type": event_type,
         "action_id": str(action_id) if action_id else str(uuid4()),
         "session_id": str(session_id) if session_id else str(uuid4()),
@@ -65,6 +66,9 @@ def build_audit_payload(
         "reason": reason or "",
         "timestamp": datetime.now(UTC).isoformat(),
     }
+    if decision_id:
+        payload["decision_id"] = str(decision_id)
+    return payload
 
 
 async def record_admin_audit_event(

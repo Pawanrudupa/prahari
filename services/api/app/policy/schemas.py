@@ -33,6 +33,7 @@ class RuleSource(BaseModel):
 
     document: str
     section: str
+    section_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

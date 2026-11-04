@@ -98,3 +98,76 @@ def load_policy_from_file(path: str | Path) -> PolicyDefinition:
 
     content = file_path.read_text(encoding="utf-8")
     return load_policy_from_yaml(content)
+
+
+async def validate_policy_declared_sources(
+    session: Any, policy: PolicyDefinition
+) -> dict[str, Any]:
+    """Validate declared sources against the policy documents/chunks in the database.
+
+    Returns:
+        {
+            "is_valid": bool,
+            "warnings": list[str],
+            "rules_with_sources": list[str],
+            "rules_without_sources": list[str],
+        }
+    """
+    from sqlalchemy import select
+
+    from app.models.policy import PolicyChunk, PolicyDocument
+
+    warnings: list[str] = []
+    rules_with_sources: list[str] = []
+    rules_without_sources: list[str] = []
+
+    # Pre-fetch all documents
+    doc_res = await session.execute(select(PolicyDocument))
+    docs = doc_res.scalars().all()
+    doc_by_title = {d.title.lower().strip(): d for d in docs}
+    doc_by_source = {d.source.lower().strip(): d for d in docs if d.source}
+
+    for rule in policy.rules:
+        if not rule.sources:
+            rules_without_sources.append(rule.id)
+            continue
+
+        rules_with_sources.append(rule.id)
+        for src in rule.sources:
+            src_doc_key = src.document.lower().strip()
+            matched_doc = doc_by_source.get(src_doc_key) or doc_by_title.get(src_doc_key)
+
+            if matched_doc is None:
+                warnings.append(f"Rule '{rule.id}' cites missing document '{src.document}'")
+                continue
+
+            if matched_doc.status == "archived":
+                warnings.append(f"Rule '{rule.id}' cites archived document '{matched_doc.title}'")
+
+            # Check chunk section
+            target_sec = (src.section_id or src.section).lower().strip()
+            chunk_stmt = select(PolicyChunk).where(PolicyChunk.document_id == matched_doc.id)
+            c_res = await session.execute(chunk_stmt)
+            chunks = c_res.scalars().all()
+
+            found_chunk = False
+            for c in chunks:
+                if c.section_id and c.section_id.lower().strip() == target_sec:
+                    found_chunk = True
+                    break
+                if c.section_title and target_sec in c.section_title.lower():
+                    found_chunk = True
+                    break
+
+            if not found_chunk:
+                warnings.append(
+                    f"Rule '{rule.id}' cites section '{src.section}' "
+                    f"not found in document '{matched_doc.title}'"
+                )
+
+    return {
+        "is_valid": len(warnings) == 0,
+        "warnings": warnings,
+        "rules_with_sources": rules_with_sources,
+        "rules_without_sources": rules_without_sources,
+    }

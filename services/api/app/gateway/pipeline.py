@@ -438,12 +438,15 @@ async def execute_gateway_pipeline(
             reason = f"High risk/injection signal detected (score: {injection_score:.2f})"
 
         # Step 8: Append Serialized Hash-Chained Audit Record (Single atomic transaction)
+        action_id = uuid4()
         audit_payload = build_audit_payload(
             agent_id=agent_id,
             tool=req.tool,
             args=req.args,
             data_classes=data_classes,
             outcome=outcome,
+            action_id=action_id,
+            decision_id=decision_id,
             rule_id=rule_id,
             policy_version=active_policy.version,
             reason=reason,
@@ -461,7 +464,7 @@ async def execute_gateway_pipeline(
                 "action.decided",
                 {
                     "decision_id": str(decision_id),
-                    "action_id": str(audit_entry.payload_json.get("action_id", decision_id)),
+                    "action_id": str(action_id),
                     "agent_id": str(agent_id),
                     "agent_name": agent.name,
                     "tool_id": req.tool,
@@ -481,7 +484,6 @@ async def execute_gateway_pipeline(
 
         # Step 8b: Persist Relational Session, Action, Decision, and Approval rows (single commit)
         t_rel_start = time.perf_counter()
-        action_id = uuid4()
 
         if tool_id:
             session_obj = await session.get(Session, req.session_id)

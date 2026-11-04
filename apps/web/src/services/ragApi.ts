@@ -1,4 +1,5 @@
 import type {
+  DecisionExplanationResponse,
   LoadSampleDocsResponse,
   PolicyChunkItem,
   PolicyDocumentItem,
@@ -125,3 +126,15 @@ export async function loadSampleDocs(token?: string | null): Promise<LoadSampleD
     token,
   );
 }
+
+export async function fetchDecisionExplanation(
+  decisionId: string,
+  token?: string | null,
+): Promise<DecisionExplanationResponse> {
+  return request<DecisionExplanationResponse>(
+    `/v1/decisions/${decisionId}/explain`,
+    { method: "GET" },
+    token,
+  );
+}
+

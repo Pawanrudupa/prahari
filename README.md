@@ -83,3 +83,17 @@ pnpm --filter @prahari/web dev
 - **Limits & Degraded Mode**: Rate limits (calls/min), runaway loop braking (repeated identical call signatures), and daily INR spend caps run in Redis. If Redis is unavailable, Prahari can fail closed (`LIMITS_FAIL_CLOSED=true`) or run in degraded in-memory mode, emitting explicit `limits.degraded` audit events.
 - **Detector Stubs**: Phase 1 includes heuristic scanners (`app/stubs/`) for prompt injection and PII to validate pipeline contracts and integration tests. Full ML models (scikit-learn Isolation Forest, BERT injection classifier) and DPDP modules are scheduled for Phases 3 and 5.
 
+## Phase 4 Policy RAG & Grounded Explainability
+
+- **Deterministic Why & Snapshot Immutability (Milestone 4b)**:
+  - Every decision explanation is decomposed into: (1) deterministic DB facts (rule id, policy version, outcome, reason, evaluator, target tool, detected PII classes), (2) declared policy sources (`rule.sources` verified in the active/archived corpus with exact clause excerpts), and (3) topical nearest clause suggestions (closest clause tier only, clearly labeled "Related, not authoritative").
+  - Non-rule decisions (e.g. `default_deny`, `engine_error`, `tool_not_granted`, `limits_exceeded`) use fixed explanation catalogs and never invoke retrieval.
+  - Snapshot immutability is enforced at the database level using a PostgreSQL trigger (`prevent_explanation_snapshot_update`) on `explanation_snapshots`.
+  - Zero raw tool arguments or raw PII are stored in explanations or snapshots.
+  - Standing disclaimer across UI and API: *"Retrieval finds related text; it cannot confirm that the clause states the currency, period, role or value you asked about."*
+- **Retrieval Engine & Answerability Gate (Milestone 4a / 4a.2)**:
+  - Hybrid retrieval combining pgvector cosine similarity ($384\text{-d}$ BGE-small embeddings) and PostgreSQL GIN full-text search with Reciprocal Rank Fusion (RRF).
+  - Absolute answerability gate enforces IDF-weighted query-term coverage ($c_{min} \ge 0.22$) and rare-term matches before classifying clauses as closest matches.
+  - Three explainable tiers: Closest clause, Weakly related, and No relevant clause.
+
+

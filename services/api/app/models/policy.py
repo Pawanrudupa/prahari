@@ -58,6 +58,7 @@ class PolicyChunk(UUIDPrimaryKeyMixin, Base):
         ForeignKey("policy_documents.id", ondelete="CASCADE"), nullable=False, index=True
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    section_id: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     section_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")

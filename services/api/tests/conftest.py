@@ -81,6 +81,7 @@ TABLES_TO_TRUNCATE = [
     "redteam_runs",
     "policy_chunks",
     "policy_documents",
+    "explanation_snapshots",
     "policy_versions",
     "policies",
 ]

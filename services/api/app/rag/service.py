@@ -17,14 +17,14 @@ from app.rag.chunker import chunk_document
 from app.rag.constants import (
     CANDIDATE_POOL_MULTIPLIER,
     DEFAULT_C_MIN,
-    DEFAULT_MAX_RARE_DF,
     DEFAULT_TAU_LEXICAL,
     DEFAULT_TAU_VECTOR,
     DEFAULT_TEXT_WEIGHT,
     DEFAULT_VECTOR_WEIGHT,
     RRF_K,
-    TIER_RELATED_UNVERIFIED,
-    TIER_STRONG_MATCH,
+    TIER_CLOSEST_CLAUSE,
+    TIER_WEAKLY_RELATED,
+    MatchTier,
 )
 from app.rag.coverage import build_corpus_df, evaluate_query_chunk_coverage
 from app.rag.embeddings import embed_query, embed_texts
@@ -371,6 +371,7 @@ async def ingest_policy_document(
             id=uuid4(),
             document_id=doc_id,
             chunk_index=c["chunk_index"],
+            section_id=c.get("section_id"),
             section_title=c["section_title"],
             text=c["text"],
             checksum_sha256=c["checksum_sha256"],
@@ -475,6 +476,7 @@ async def get_document_chunks(
             document_id=c.document_id,
             document_title=doc.title,
             chunk_index=c.chunk_index,
+            section_id=c.section_id,
             section_title=c.section_title,
             text=c.text,
             checksum_sha256=c.checksum_sha256,
@@ -613,7 +615,7 @@ async def _search_postgres(
     if query_vector is not None:
         vector_sql = text("""
             SELECT
-                c.id, c.document_id, d.title as doc_title, c.section_title,
+                c.id, c.document_id, d.title as doc_title, c.section_id, c.section_title,
                 c.text, c.checksum_sha256,
                 (1.0 - (c.embedding <=> CAST(:query_vec AS vector))) as cosine_sim
             FROM policy_chunks c
@@ -638,6 +640,7 @@ async def _search_postgres(
                 "chunk_id": chunk_id,
                 "document_id": row["document_id"],
                 "document_title": row["doc_title"],
+                "section_id": row.get("section_id"),
                 "section_title": row["section_title"],
                 "text": row["text"],
                 "checksum_sha256": row["checksum_sha256"],
@@ -657,7 +660,7 @@ async def _search_postgres(
                 END as or_ts
         )
         SELECT
-            c.id, c.document_id, d.title as doc_title, c.section_title,
+            c.id, c.document_id, d.title as doc_title, c.section_id, c.section_title,
             c.text, c.checksum_sha256,
             ts_rank_cd(c.tsv, coalesce(qd.exact_ts || qd.or_ts, qd.exact_ts, qd.or_ts)) as lex_rank
         FROM policy_chunks c
@@ -689,6 +692,7 @@ async def _search_postgres(
             "chunk_id": chunk_id,
             "document_id": row["document_id"],
             "document_title": row["doc_title"],
+            "section_id": row.get("section_id"),
             "section_title": row["section_title"],
             "text": row["text"],
             "checksum_sha256": row["checksum_sha256"],
@@ -735,6 +739,7 @@ async def _search_postgres(
                 "chunk_id": chunk_id,
                 "document_id": sample["document_id"],
                 "document_title": sample["document_title"],
+                "section_id": sample.get("section_id"),
                 "section_title": sample["section_title"],
                 "text": sample["text"],
                 "checksum_sha256": sample["checksum_sha256"],
@@ -767,7 +772,6 @@ async def _search_postgres(
             term_dfs=term_dfs,
             total_chunks=total_chunks,
             c_min=DEFAULT_C_MIN,
-            max_rare_df=DEFAULT_MAX_RARE_DF,
         )
         cos_sim = cand.get("cosine_sim")
         lex_rank = cand.get("lexical_rank")
@@ -775,16 +779,18 @@ async def _search_postgres(
         passes_vector = cos_sim is not None and cos_sim >= tau_vector
         passes_lexical = lex_rank is not None and lex_rank >= tau_lexical
 
-        if cov_res["is_strong_match"] and (passes_vector or passes_lexical):
-            tier = TIER_STRONG_MATCH
-        else:
-            tier = TIER_RELATED_UNVERIFIED
+        tier: MatchTier = (
+            TIER_CLOSEST_CLAUSE
+            if cov_res["is_closest_clause"] and (passes_vector or passes_lexical)
+            else TIER_WEAKLY_RELATED
+        )
 
         results.append(
             RAGSearchResultItem(
                 chunk_id=cand["chunk_id"],
                 document_id=cand["document_id"],
                 document_title=cand["document_title"],
+                section_id=cand.get("section_id"),
                 section_title=cand["section_title"],
                 text=cand["text"],
                 checksum_sha256=cand["checksum_sha256"],
@@ -860,14 +866,14 @@ async def _search_sqlite(
             term_dfs=term_dfs,
             total_chunks=total_chunks,
             c_min=DEFAULT_C_MIN,
-            max_rare_df=DEFAULT_MAX_RARE_DF,
         )
-        tier = TIER_STRONG_MATCH if cov_res["is_strong_match"] else TIER_RELATED_UNVERIFIED
+        tier = TIER_CLOSEST_CLAUSE if cov_res["is_closest_clause"] else TIER_WEAKLY_RELATED
         items.append(
             RAGSearchResultItem(
                 chunk_id=chunk.id,
                 document_id=chunk.document_id,
                 document_title=doc.title,
+                section_id=chunk.section_id,
                 section_title=chunk.section_title,
                 text=chunk.text,
                 checksum_sha256=chunk.checksum_sha256,
@@ -880,3 +886,23 @@ async def _search_sqlite(
             )
         )
     return "lexical_only", items
+
+
+async def compute_corpus_hash(session: AsyncSession) -> str:
+    """Compute deterministic SHA-256 hash representing current active corpus state.
+
+    Changes whenever documents are uploaded, modified, or archived.
+    Used for cache invalidation and snapshot reproducibility.
+    """
+    import hashlib
+
+    stmt = (
+        select(PolicyDocument.checksum_sha256)
+        .where(PolicyDocument.status == "active")
+        .order_by(PolicyDocument.checksum_sha256.asc())
+    )
+    res = await session.execute(stmt)
+    checksums = [row[0] for row in res.all()]
+    if not checksums:
+        return "0000000000000000000000000000000000000000000000000000000000000000"
+    return hashlib.sha256("".join(checksums).encode("utf-8")).hexdigest()

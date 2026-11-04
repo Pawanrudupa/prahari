@@ -2,7 +2,7 @@ from app.models.agent import Agent, AgentToolGrant
 from app.models.audit import AuditCheckpoint, AuditLog
 from app.models.base import Base
 from app.models.budget import Budget, Incident, RedteamRun
-from app.models.decision import Approval, Decision
+from app.models.decision import Approval, Decision, ExplanationSnapshot
 from app.models.policy import Policy, PolicyChunk, PolicyDocument, PolicyVersion
 from app.models.session import Action, Session
 from app.models.tool import Tool
@@ -20,6 +20,7 @@ __all__ = [
     "Action",
     "Decision",
     "Approval",
+    "ExplanationSnapshot",
     "AuditLog",
     "AuditCheckpoint",
     "Budget",

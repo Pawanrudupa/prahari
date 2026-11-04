@@ -1,18 +1,22 @@
 """Decisions and audit query endpoints with cursor pagination and filtering."""
 
+import contextlib
 from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.admin import require_session_or_admin_token
 from app.core.database import get_db
+from app.core.redis import redis_client
 from app.models.agent import Agent
 from app.models.audit import AuditLog
+from app.rag.explainer import explain_decision
+from app.schemas.rag import DecisionExplanationResponse
 
 router = APIRouter(prefix="/v1/decisions", tags=["decisions"])
 
@@ -148,8 +152,13 @@ async def list_decisions(
         if rule_filter_lower and rule_filter_lower not in item_rule.lower():
             continue
 
+        dec_id = row.id
+        if payload.get("decision_id"):
+            with contextlib.suppress(Exception):
+                dec_id = UUID(str(payload["decision_id"]))
+
         item = DecisionItem(
-            id=row.id,
+            id=dec_id,
             seq=row.seq,
             prev_hash=row.prev_hash,
             hash=row.hash,
@@ -261,3 +270,65 @@ async def list_admin_events(
         has_more=has_more,
         total_count=len(items),
     )
+
+
+# Rate limiter for /v1/decisions/{id}/explain: 60/min
+_LOCAL_EXPLAIN_RATE_LIMITS: dict[str, list[float]] = {}
+
+
+async def _check_explain_rate_limit(
+    client_id: str, max_requests: int = 60, window_seconds: int = 60
+) -> None:
+    """Enforce 60 requests per minute rate limit via Redis or local fallback."""
+    if redis_client is not None:
+        try:
+            key = f"rate_limit:explain:{client_id}"
+            count = await redis_client.incr(key)
+            if count == 1:
+                await redis_client.expire(key, window_seconds)
+            if count > max_requests:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Rate limit exceeded: maximum {max_requests} requests per minute",
+                )
+            return
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Fall back to in-memory window
+
+    import time
+
+    now = time.time()
+    timestamps = _LOCAL_EXPLAIN_RATE_LIMITS.setdefault(client_id, [])
+    # Evict timestamps older than window
+    _LOCAL_EXPLAIN_RATE_LIMITS[client_id] = [t for t in timestamps if now - t < window_seconds]
+    if len(_LOCAL_EXPLAIN_RATE_LIMITS[client_id]) >= max_requests:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: maximum {max_requests} requests per minute",
+        )
+    _LOCAL_EXPLAIN_RATE_LIMITS[client_id].append(now)
+
+
+@router.get(
+    "/{decision_id}/explain",
+    response_model=DecisionExplanationResponse,
+    summary="Generate or retrieve immutable explanation for a decision",
+    dependencies=[Depends(require_session_or_admin_token)],
+)
+async def get_decision_explanation(
+    decision_id: UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> DecisionExplanationResponse:
+    """
+    Generate or retrieve immutable decision explanation snapshot.
+    Decomposes into:
+    1. Deterministic 'Why' from server-side DB facts (zero raw arguments).
+    2. Declared basis verified to exist in active/archived corpus.
+    3. Topical suggestions (closest clause tier only, labeled not authoritative).
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    await _check_explain_rate_limit(client_ip, max_requests=60, window_seconds=60)
+    return await explain_decision(session=db, decision_id=decision_id)

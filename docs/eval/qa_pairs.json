@@ -6,7 +6,8 @@
     "in_scope": true,
     "expected_document": "payments-fraud-policy.md",
     "expected_section": "Section 2.1 Single-Transaction Limits",
-    "expected_text_contains": "INR 10,000"
+    "expected_text_contains": "INR 10,000",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-002",
@@ -16,7 +17,8 @@
     "expected_document": "payments-fraud-policy.md",
     "expected_section": "Section 2.2 Dual-Authorization Escalation Threshold",
     "expected_text_contains": "INR 50,000",
-    "rule_mapping": "R2_TRANSACTION_THRESHOLD"
+    "rule_mapping": "R2_TRANSACTION_THRESHOLD",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-003",
@@ -26,7 +28,8 @@
     "expected_document": "payments-fraud-policy.md",
     "expected_section": "Section 3.1 Cumulative Daily Spend Cap",
     "expected_text_contains": "INR 250,000",
-    "rule_mapping": "LIMITS_BRAKE"
+    "rule_mapping": "LIMITS_BRAKE",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-004",
@@ -35,7 +38,8 @@
     "in_scope": true,
     "expected_document": "payments-fraud-policy.md",
     "expected_section": "Section 4.1 Cardholder Data Exclusion",
-    "expected_text_contains": "Primary Account Numbers"
+    "expected_text_contains": "Primary Account Numbers",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-005",
@@ -45,7 +49,8 @@
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 3.2 Bulk Data Export Prohibitions",
     "expected_text_contains": "100 rows",
-    "rule_mapping": "R3_BULK_EXPORT"
+    "rule_mapping": "R3_BULK_EXPORT",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-006",
@@ -55,7 +60,8 @@
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 3.1 Masking of Personal Identifiers",
     "expected_text_contains": "final 4 digits",
-    "rule_mapping": "R1_PII_MASKING"
+    "rule_mapping": "R1_PII_MASKING",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-007",
@@ -64,7 +70,8 @@
     "in_scope": true,
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 4.2 Logging Sanitation",
-    "expected_text_contains": "Raw customer payloads"
+    "expected_text_contains": "Raw customer payloads",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-008",
@@ -73,7 +80,8 @@
     "in_scope": true,
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 2 Data Classification Framework",
-    "expected_text_contains": "Public"
+    "expected_text_contains": "Public",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-009",
@@ -82,7 +90,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 2.1 Agent Role Categorization",
-    "expected_text_contains": "Read-only lookup"
+    "expected_text_contains": "Read-only lookup",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-010",
@@ -91,7 +100,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 2.2 Capability Grants and Granular Tools",
-    "expected_text_contains": "CapabilityGrant"
+    "expected_text_contains": "CapabilityGrant",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-011",
@@ -100,7 +110,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 2.1 Agent Role Categorization",
-    "expected_text_contains": "Support"
+    "expected_text_contains": "Support",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-012",
@@ -109,7 +120,8 @@
     "in_scope": true,
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 3.1 Masking of Personal Identifiers",
-    "expected_text_contains": "National identity"
+    "expected_text_contains": "National identity",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-013",
@@ -118,7 +130,8 @@
     "in_scope": true,
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 3.2 Bulk Data Export Prohibitions",
-    "expected_text_contains": "100 rows"
+    "expected_text_contains": "100 rows",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-014",
@@ -127,7 +140,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 3.2 Credential Non-Disclosure",
-    "expected_text_contains": "security denial"
+    "expected_text_contains": "security denial",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-015",
@@ -136,7 +150,8 @@
     "in_scope": true,
     "expected_document": "payments-fraud-policy.md",
     "expected_section": "Section 3.2 Burst Velocity Restrictions",
-    "expected_text_contains": "5 consecutive payment disbursements"
+    "expected_text_contains": "5 consecutive payment disbursements",
+    "category": "in_scope"
   },
   {
     "id": "qa-dev-016",
@@ -145,7 +160,8 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   },
   {
     "id": "qa-dev-017",
@@ -154,7 +170,8 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   },
   {
     "id": "qa-dev-018",
@@ -163,7 +180,8 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   },
   {
     "id": "qa-dev-019",
@@ -172,7 +190,8 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   },
   {
     "id": "qa-dev-020",
@@ -181,7 +200,8 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   },
   {
     "id": "qa-dev-021",
@@ -343,7 +363,8 @@
     "in_scope": true,
     "expected_document": "payments-fraud-policy.md",
     "expected_section": "Section 4.2 Reversal and Refund Authorization",
-    "expected_text_contains": "INR 5,000"
+    "expected_text_contains": "INR 5,000",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-022",
@@ -352,7 +373,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 3.1 Ephemeral Session Tokens",
-    "expected_text_contains": "60 minutes"
+    "expected_text_contains": "60 minutes",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-023",
@@ -361,7 +383,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 2.1 Agent Role Categorization",
-    "expected_text_contains": "Not authorized"
+    "expected_text_contains": "Not authorized",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-024",
@@ -370,7 +393,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 4.1 Multi-Party Sign-Off",
-    "expected_text_contains": "two authorized"
+    "expected_text_contains": "two authorized",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-025",
@@ -380,7 +404,8 @@
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 4.2 Emergency Revocation",
     "expected_text_contains": "unilateral authority",
-    "rule_mapping": "R5_EMERGENCY_REVOCATION"
+    "rule_mapping": "R5_EMERGENCY_REVOCATION",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-026",
@@ -389,7 +414,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 3.2 Credential Non-Disclosure",
-    "expected_text_contains": "security denial"
+    "expected_text_contains": "security denial",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-027",
@@ -398,7 +424,8 @@
     "in_scope": true,
     "expected_document": "consent-governance-policy.md",
     "expected_section": "Section 4.1 Immutable Consent Logging",
-    "expected_text_contains": "hash-chained audit log"
+    "expected_text_contains": "hash-chained audit log",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-028",
@@ -407,7 +434,8 @@
     "in_scope": true,
     "expected_document": "consent-governance-policy.md",
     "expected_section": "Section 3.2 Post-Withdrawal Erasure Obligations",
-    "expected_text_contains": "marked for deletion"
+    "expected_text_contains": "marked for deletion",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-029",
@@ -416,7 +444,8 @@
     "in_scope": true,
     "expected_document": "consent-governance-policy.md",
     "expected_section": "Section 4.2 Cross-Border Processing Safeguards",
-    "expected_text_contains": "equivalent encryption"
+    "expected_text_contains": "equivalent encryption",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-030",
@@ -425,7 +454,8 @@
     "in_scope": true,
     "expected_document": "consent-governance-policy.md",
     "expected_section": "Section 2.2 Granular Consent Categories",
-    "expected_text_contains": "Fraud monitoring"
+    "expected_text_contains": "Fraud monitoring",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-031",
@@ -434,7 +464,8 @@
     "in_scope": true,
     "expected_document": "consent-governance-policy.md",
     "expected_section": "Section 2.1 Explicit Purpose Binding",
-    "expected_text_contains": "fine-tuning"
+    "expected_text_contains": "fine-tuning",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-032",
@@ -443,7 +474,8 @@
     "in_scope": true,
     "expected_document": "consent-governance-policy.md",
     "expected_section": "Section 3.1 Unconditional Right of Withdrawal",
-    "expected_text_contains": "15 minutes"
+    "expected_text_contains": "15 minutes",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-033",
@@ -452,7 +484,8 @@
     "in_scope": true,
     "expected_document": "data-handling-policy.md",
     "expected_section": "Section 4.1 Ephemeral Processing",
-    "expected_text_contains": "no long-term persistence"
+    "expected_text_contains": "no long-term persistence",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-034",
@@ -461,7 +494,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 2.1 Agent Role Categorization",
-    "expected_text_contains": "Billing"
+    "expected_text_contains": "Billing",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-035",
@@ -470,7 +504,8 @@
     "in_scope": true,
     "expected_document": "access-control-policy.md",
     "expected_section": "Section 2.2 Capability Grants and Granular Tools",
-    "expected_text_contains": "Universal or wildcard"
+    "expected_text_contains": "Universal or wildcard",
+    "category": "in_scope"
   },
   {
     "id": "qa-test-036",
@@ -479,7 +514,8 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   },
   {
     "id": "qa-test-037",
@@ -488,7 +524,8 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   },
   {
     "id": "qa-test-038",
@@ -497,7 +534,8 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   },
   {
     "id": "qa-test-039",
@@ -506,7 +544,8 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   },
   {
     "id": "qa-test-040",
@@ -515,6 +554,7 @@
     "in_scope": false,
     "expected_document": null,
     "expected_section": null,
-    "expected_text_contains": null
+    "expected_text_contains": null,
+    "category": "near_domain_negative"
   }
 ]

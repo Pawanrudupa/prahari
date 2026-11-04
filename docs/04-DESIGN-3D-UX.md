@@ -191,6 +191,20 @@ A scroll-driven, high-credibility narrative with zero backend dependencies:
 
 ---
 
+## Decision Explainability Drawer & RAG UX (Milestone 4b)
+- **Slide-over Drawer Tabs**: Toggle seamlessly between "Details & Audit Chain" and "Explain Decision".
+- **Grounded vs Ungrounded Status Badges**:
+  - `Grounded in Declared Policy` (Emerald badge): Active strictly when the decision's governing rule has explicit, verified policy source mappings in the corpus.
+  - `No Declared Source` (Amber badge): Displayed when the rule does not declare sources or for non-rule fallback/engine decisions.
+- **Card Decomposition**:
+  1. **Why this Decision**: Deterministic breakdown from server DB facts (Rule trigger, outcome, reason, evaluator, target tool, detected PII data classes). Zero raw argument or PII leakage.
+  2. **Declared Policy Basis**: Authoritative clause citations from `rule.sources` with document title, section breadcrumb (`Section 2 > 2.1`), exact excerpt, copy-to-clipboard button, and archived indicator if document status is archived.
+  3. **Topical Clause Suggestions**: Collapsible section ("Related, not authoritative") displaying nearest retrieved clauses with cosine similarity and query coverage metrics.
+- **Standing Note Callout**: Standing disclaimer displayed on all explanations: *"Retrieval finds related text; it cannot confirm that the clause states the currency, period, role or value you asked about."*
+- **Immutability Footer**: Displays SHA-256 fingerprint of the snapshot and corpus hash as of the first explanation request.
+
+---
+
 ## Accessibility & Verification Standards
 - **Lighthouse Accessibility Score**: $\ge 90$ on both `/` and `/login`.
 - **Axe Core Playwright Checks**: Zero critical or serious accessibility violations.

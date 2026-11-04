@@ -50,7 +50,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "A", "T20", "SIM"]
 "benchmarks/*" = ["T201"]
 "**/*simulator*/**" = ["T201"]
 "**/cli.py" = ["T201"]
-"evals/*" = ["T201", "E402"]
+"evals/*" = ["T201", "E402", "E501"]
 
 [tool.mypy]
 python_version = "3.12"

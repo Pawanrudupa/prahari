@@ -5,12 +5,18 @@ defaults:
 rules:
   - id: R1-allow-read-tickets
     effect: allow
+    description: Allow support role agents to look up customer ticket records
     agent:
       role: support
     tool: crm.read_ticket
+    sources:
+      - document: access-control-policy.md
+        section: Section 2.1
+        section_id: "2.1"
 
   - id: R2-redact-pii-outbound
     effect: redact
+    description: Mask customer national identifiers and contact info in outbound emails
     tool: email.send
     when:
       data_classes_any:
@@ -21,26 +27,38 @@ rules:
     redact:
       - aadhaar
       - pan
+    sources:
+      - document: data-handling-policy.md
+        section: Section 3.1
+        section_id: "3.1"
 
   - id: R3-escalate-bulk-export
     effect: escalate
+    description: Escalate bulk tabular customer data exports exceeding 100 rows for supervisor approval
     tool: crm.export
     when:
       rows_gt: 100
+    sources:
+      - document: data-handling-policy.md
+        section: Section 3.2
+        section_id: "3.2"
 
   - id: R4-deny-untrusted-instruction
     effect: deny
+    description: Reject prompt injection attempts with high confidence score
     when:
       injection_score_gte: 0.8
 
   - id: R5-allow-finance-payments
     effect: allow
+    description: Allow finance team to execute outbound financial payment disbursements
     agent:
       role: finance
     tool: payments.transfer
 
   - id: R6-allow-devops-infra
     effect: allow
+    description: Allow devops role to restart internal system infrastructure services
     agent:
       role: devops
     tool: infra.restart_service

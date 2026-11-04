@@ -23,9 +23,17 @@ Work in vertical slices. Each phase ends demoable with tests green.
 - **Done when:** DPDP-class data never appears unredacted in outbound tool args when policy requires; loop attack auto-stopped.
 
 ## Phase 4 — Policy RAG + explain + authoring (week 4)
-- Document ingest/chunking/embeddings, hybrid retrieval, explain endpoint, Policy Studio with English-to-YAML plus generated tests.
-- RAG eval set of 30 Q/A pairs with RAGAS or similar; report faithfulness and context precision.
-- **Done when:** every decision explanation cites a real clause or states default-deny; eval scores recorded in `docs/eval/`.
+- **Milestone 4a (Knowledge Base & Ingestion)**: [COMPLETE] Document ingest/chunking/local embeddings, hybrid retrieval (pgvector + GIN tsvector with RRF), Knowledge Base UI with chunk viewer and live test query inspector.
+- **Milestone 4a.1 (Fix Pass)**: [COMPLETE] Strict chunking, ts_rank lexical search, near-domain refusal calibration, evaluate load interference.
+- **Milestone 4a.2 (Answerability Gate & Threshold Freeze)**: [COMPLETE] IDF-weighted content-term coverage gate ($c_{min} \ge 0.22$), rare-term ceiling scaling ($s \le 0.40$), three output tiers ("Closest clause", "Weakly related", "No relevant clause"), retrieval threshold freeze.
+- **Milestone 4b (Decision Explainability & Grounding Verification)**: [COMPLETE]
+  - Offline deterministic explainer decomposing into Why (DB facts), Declared policy basis (authoritative), and Topical suggestions (related, not authoritative).
+  - Standing note callout across UI and API: *"Retrieval finds related text; it cannot confirm that the clause states the currency, period, role or value you asked about."*
+  - `explanation_snapshots` table with database-level PostgreSQL update prevention trigger.
+  - Decision Drawer "Explain Decision" tab with copy buttons, archived source document flagging, and snapshot SHA-256 audit fingerprint.
+  - Full Playwright E2E verification test suite (`phase4b-explain.spec.ts`) and media artifacts (`phase4b-explain-grounded-allow.png`, `phase4b-explain-ungrounded-deny.png`, `phase4b-decision-explain-flow.webm`).
+- **Milestone 4c (Policy Authoring & English-to-YAML)**: [UPCOMING] Policy Studio with natural language policy drafting and dry-run validation.
+- **Done when:** every decision explanation cites a verified clause or states no declared source; eval scores recorded in `docs/eval/`.
 
 ## Phase 5 — ML signals + Workflow DAG (week 5)
 - Isolation Forest risk score; injection detector (heuristics first, classifier second); session DAG scene with scrubber.

@@ -30,7 +30,8 @@ from app.rag.constants import (
     DEFAULT_MAX_RARE_DF,
     DEFAULT_TAU_LEXICAL,
     DEFAULT_TAU_VECTOR,
-    TIER_STRONG_MATCH,
+    TIER_CLOSEST_CLAUSE,
+    TIER_NO_RELEVANT_CLAUSE,
 )
 from app.rag.service import (
     DuplicateDocumentError,
@@ -96,8 +97,9 @@ async def evaluate_split(
     top1_gold_hits = 0
     reciprocal_ranks: list[float] = []
 
-    near_neg_refused = 0
-    far_neg_refused = 0
+    near_neg_no_closest = 0
+    far_neg_no_closest = 0
+    total_no_relevant_clause = 0
 
     in_scope_cos_sims: list[float] = []
     in_scope_cov_scores: list[float] = []
@@ -111,7 +113,14 @@ async def evaluate_split(
             query = item.get("query") or item.get("q", "")
             in_scope = item.get("in_scope", True)
             q_id = item.get("id", f"q-{len(per_question_results) + 1}")
-            category = item.get("category", "")
+            category = item.get("category")
+
+            # INVARIANT: Category is mandatory on every eval item. Fail harness if missing.
+            if not category or not str(category).strip():
+                raise ValueError(
+                    f"CRITICAL EVAL FAILURE: Item '{q_id}' is missing mandatory 'category' field!"
+                )
+
             rule_mapping = item.get("rule_mapping")
 
             mode, results = await search_policy_corpus(
@@ -128,7 +137,7 @@ async def evaluate_split(
             top = results[0] if results else None
             top_cos = top.cosine_similarity if top and top.cosine_similarity is not None else 0.0
             top_cov = top.coverage_score if top else 0.0
-            top_tier = top.match_tier if top else "no_relevant_clause"
+            top_tier = top.match_tier if top else TIER_NO_RELEVANT_CLAUSE
 
             q_detail: dict[str, Any] = {
                 "id": q_id,
@@ -146,15 +155,8 @@ async def evaluate_split(
             }
 
             if not in_scope:
-                # Distinguish near-domain vs far-domain negatives
-                is_near = (
-                    "near" in category.lower()
-                    or "dispute" in query.lower()
-                    or "biometric" in query.lower()
-                    or "aes" in query.lower()
-                    or "temperature" in query.lower()
-                    or "criminal" in query.lower()
-                )
+                cat_lower = str(category).lower().strip()
+                is_near = "near" in cat_lower
                 if is_near:
                     near_neg_count += 1
                 else:
@@ -165,19 +167,24 @@ async def evaluate_split(
                 if top_cov > 0:
                     out_scope_cov_scores.append(top_cov)
 
-                # Correct refusal: no results retrieved OR top candidate refused / not strong_match
-                refusal_ok = (len(results) == 0) or (top_tier != TIER_STRONG_MATCH)
-                if refusal_ok:
+                # Correct refusal: top candidate refused / not closest clause (strong_match)
+                no_closest_ok = (len(results) == 0) or (
+                    top_tier not in (TIER_CLOSEST_CLAUSE, "strong_match")
+                )
+                if no_closest_ok:
                     if is_near:
-                        near_neg_refused += 1
+                        near_neg_no_closest += 1
                     else:
-                        far_neg_refused += 1
+                        far_neg_no_closest += 1
 
-                q_detail["passed"] = refusal_ok
+                if len(results) == 0 or top_tier == TIER_NO_RELEVANT_CLAUSE:
+                    total_no_relevant_clause += 1
+
+                q_detail["passed"] = no_closest_ok
                 q_detail["reason"] = (
-                    "refused_correctly"
-                    if refusal_ok
-                    else f"false_positive_strong_match_{top.document_title if top else 'none'}"
+                    "no_closest_clause_correct"
+                    if no_closest_ok
+                    else f"false_positive_closest_clause_{top.document_title if top else 'none'}"
                 )
             else:
                 in_scope_count += 1
@@ -224,12 +231,15 @@ async def evaluate_split(
     top1_acc = (top1_gold_hits / in_scope_count) if in_scope_count > 0 else 0.0
     mrr = (sum(reciprocal_ranks) / len(reciprocal_ranks)) if reciprocal_ranks else 0.0
 
-    # Refusal Metrics
+    # Negative / Non-Closest Metrics (Accurate reporting)
     total_out_scope = near_neg_count + far_neg_count
-    total_refused = near_neg_refused + far_neg_refused
-    near_neg_rate = (near_neg_refused / near_neg_count) if near_neg_count > 0 else 1.0
-    far_neg_rate = (far_neg_refused / far_neg_count) if far_neg_count > 0 else 1.0
-    total_refusal_rate = (total_refused / total_out_scope) if total_out_scope > 0 else 1.0
+    total_no_closest = near_neg_no_closest + far_neg_no_closest
+    near_neg_no_closest_rate = (near_neg_no_closest / near_neg_count) if near_neg_count > 0 else 1.0
+    far_neg_no_closest_rate = (far_neg_no_closest / far_neg_count) if far_neg_count > 0 else 1.0
+    no_closest_clause_rate = (total_no_closest / total_out_scope) if total_out_scope > 0 else 1.0
+    no_relevant_clause_rate = (
+        (total_no_relevant_clause / total_out_scope) if total_out_scope > 0 else 0.0
+    )
 
     # Score Distributions
     in_cos_dist = {
@@ -272,14 +282,22 @@ async def evaluate_split(
         "top1_gold_rate": round(top1_acc, 4),
         "mrr": round(mrr, 4),
         "near_neg_count": near_neg_count,
-        "near_neg_refused": near_neg_refused,
-        "near_neg_rate": round(near_neg_rate, 4),
+        "near_neg_no_closest": near_neg_no_closest,
+        "near_neg_refused": near_neg_no_closest,
+        "near_neg_rate": round(near_neg_no_closest_rate, 4),
+        "near_neg_no_closest_rate": round(near_neg_no_closest_rate, 4),
         "far_neg_count": far_neg_count,
-        "far_neg_refused": far_neg_refused,
-        "far_neg_rate": round(far_neg_rate, 4),
-        "total_refused": total_refused,
+        "far_neg_no_closest": far_neg_no_closest,
+        "far_neg_refused": far_neg_no_closest,
+        "far_neg_rate": round(far_neg_no_closest_rate, 4),
+        "far_neg_no_closest_rate": round(far_neg_no_closest_rate, 4),
+        "total_no_closest": total_no_closest,
+        "total_refused": total_no_closest,
         "total_out_scope": total_out_scope,
-        "total_refusal_rate": round(total_refusal_rate, 4),
+        "total_refusal_rate": round(no_closest_clause_rate, 4),
+        "no_closest_clause_rate": round(no_closest_clause_rate, 4),
+        "total_no_relevant_clause": total_no_relevant_clause,
+        "no_relevant_clause_rate": round(no_relevant_clause_rate, 4),
         "in_scope_cosine": in_cos_dist,
         "out_scope_cosine": out_cos_dist,
         "in_scope_coverage": in_cov_dist,
@@ -293,16 +311,26 @@ def print_split_summary(s: dict[str, Any]) -> None:
     mode_str = "WITH RERANKER" if s["reranker_enabled"] else "WITHOUT RERANKER (FAST)"
     print(f"\n--- SPLIT: {s['split'].upper()} ({s['total_queries']} queries) [{mode_str}] ---")
     r3_hit, r3_tot = s["recall_at_3_hits"], s["in_scope_count"]
-    print(f"  Recall@3 (In-Scope):      {r3_hit}/{r3_tot} ({s['recall_at_3']*100:.1f}%)")
+    print(f"  Recall@3 (In-Scope):      {r3_hit}/{r3_tot} ({s['recall_at_3'] * 100:.1f}%)")
     t1_hit = s["top1_gold_hits"]
-    print(f"  Top-1 Gold Match:         {t1_hit}/{r3_tot} ({s['top1_gold_rate']*100:.1f}%)")
+    print(f"  Top-1 Gold Match:         {t1_hit}/{r3_tot} ({s['top1_gold_rate'] * 100:.1f}%)")
     print(f"  MRR (In-Scope):           {s['mrr']:.3f}")
-    nn_hit, nn_tot = s["near_neg_refused"], s["near_neg_count"]
-    print(f"  Near-Domain Refusal:      {nn_hit}/{nn_tot} ({s['near_neg_rate']*100:.1f}%)")
-    fn_hit, fn_tot = s["far_neg_refused"], s["far_neg_count"]
-    print(f"  Far-Domain Refusal:       {fn_hit}/{fn_tot} ({s['far_neg_rate']*100:.1f}%)")
-    tot_ref, tot_out = s["total_refused"], s["total_out_scope"]
-    print(f"  Total Refusal:            {tot_ref}/{tot_out} ({s['total_refusal_rate']*100:.1f}%)")
+    nn_hit, nn_tot = s["near_neg_no_closest"], s["near_neg_count"]
+    print(
+        f"  Near-Domain No-Closest:   {nn_hit}/{nn_tot} ({s['near_neg_no_closest_rate'] * 100:.1f}%)"
+    )
+    fn_hit, fn_tot = s["far_neg_no_closest"], s["far_neg_count"]
+    print(
+        f"  Far-Domain No-Closest:    {fn_hit}/{fn_tot} ({s['far_neg_no_closest_rate'] * 100:.1f}%)"
+    )
+    tot_nc, tot_out = s["total_no_closest"], s["total_out_scope"]
+    print(
+        f"  Total No-Closest Rate:    {tot_nc}/{tot_out} ({s['no_closest_clause_rate'] * 100:.1f}%)"
+    )
+    tot_nr = s["total_no_relevant_clause"]
+    print(
+        f"  Total No-Relevant Rate:   {tot_nr}/{tot_out} ({s['no_relevant_clause_rate'] * 100:.1f}%)"
+    )
 
     in_cos = s["in_scope_cosine"]
     out_cos = s["out_scope_cosine"]
@@ -444,16 +472,19 @@ async def main() -> None:
         in_r3 = s["recall_at_3"] * 100
         t1_pct = s["top1_gold_rate"] * 100
         mrr = s["mrr"]
-        nn_hit, nn_tot = s["near_neg_refused"], s["near_neg_count"]
-        nn_pct = s["near_neg_rate"] * 100
-        fn_hit, fn_tot = s["far_neg_refused"], s["far_neg_count"]
-        fn_pct = s["far_neg_rate"] * 100
-        tot_ref, tot_out = s["total_refused"], s["total_out_scope"]
-        tot_pct = s["total_refusal_rate"] * 100
+        nn_hit, nn_tot = s["near_neg_no_closest"], s["near_neg_count"]
+        nn_pct = s["near_neg_no_closest_rate"] * 100
+        fn_hit, fn_tot = s["far_neg_no_closest"], s["far_neg_count"]
+        fn_pct = s["far_neg_no_closest_rate"] * 100
+        tot_nc, tot_out = s["total_no_closest"], s["total_out_scope"]
+        tot_nc_pct = s["no_closest_clause_rate"] * 100
+        tot_nr = s["total_no_relevant_clause"]
+        tot_nr_pct = s["no_relevant_clause_rate"] * 100
         return (
             f"| **{s_name}** | {tot} | {in_hit}/{in_tot} ({in_r3:.1f}%) | "
             f"**{t1_pct:.1f}%** | **{mrr:.3f}** | {nn_hit}/{nn_tot} ({nn_pct:.1f}%) | "
-            f"{fn_hit}/{fn_tot} ({fn_pct:.1f}%) | **{tot_ref}/{tot_out} ({tot_pct:.1f}%)** |\n"
+            f"{fn_hit}/{fn_tot} ({fn_pct:.1f}%) | **{tot_nc}/{tot_out} ({tot_nc_pct:.1f}%)** | "
+            f"{tot_nr}/{tot_out} ({tot_nr_pct:.1f}%) |\n"
         )
 
     bge_desc = "FastEmbed `BAAI/bge-small-en-v1.5` (384-d, ONNX int8/float32, threads=1, sem=2)"
@@ -467,7 +498,7 @@ async def main() -> None:
         f"$\\text{{df}}_{{\\text{{max\\_rare}}}} = {DEFAULT_MAX_RARE_DF}$"
     )
 
-    report_md = f"""# Prahari Policy RAG Evaluation Report (Milestone 4a.2 Frozen)
+    report_md = f"""# Prahari Policy RAG Evaluation Report (Milestone 4a.2 / 4b Frozen)
 
 > **Status:** Retrieval Code and Thresholds Frozen
 > **Embedding Model:** {bge_desc}
@@ -477,7 +508,7 @@ async def main() -> None:
 
 ## Benchmark Summary Table
 
-| Split | Total Queries | Recall@3 | Top-1 Gold | MRR | Near-Domain | Far-Domain | Total Refusal |
+| Split | Total Queries | Recall@3 | Top-1 Gold | MRR | Near-Domain No-Closest | Far-Domain No-Closest | No-Closest Rate | No-Relevant Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 """
     report_md += _md_row(dev_base)
@@ -510,6 +541,17 @@ async def main() -> None:
         "- **R5 (Emergency Key Revocation)**: `Access Control Policy > Section 4.2` — Top-1 Hit\n"
         "- **R6 (Policy Modification Sign-off)**: `Access Control Policy > 4.1` — Top-1 Hit\n"
         "- **Limits (Daily Cap & Velocity)**: `Payments Fraud Policy > 3.1 & 3.2` — Top-1 Hit\n\n"
+        "## External Adversarial Set (`heldout_user_2.json`) Summary (Run Once)\n"
+        "- **Evaluation Status**: External adversarial evaluation executed once with frozen retrieval engine.\n"
+        "- **Composition**: 10 questions (5 answerable paraphrased queries, 5 unanswerable near-domain negatives with high lexical overlap).\n"
+        "- **In-Scope Performance**: Recall@3: 5/5 (100.0%), Top-1 Gold: 4/5 (80.0%), MRR: 0.867.\n"
+        "- **Out-of-Scope / Answerability Behavior**: Near-Domain No-Closest-Clause: 1/5 (20.0%).\n"
+        "  - 4 False Closest Matches (Q6, Q7, Q8, Q10): Queries borrowed terms like 'disbursements', 'export', 'consent', and 'validity'. The semantic and lexical gates matched topically related clauses, but the clauses did not state the specific parameter (e.g. USD currency, 50-row threshold) asked about.\n"
+        "  - Standing Note: 'Retrieval finds related text; it cannot confirm that the clause states the currency, period, role or value you asked about.'\n"
+        "- **Vocabulary-Gap Analysis (Q4)**:\n"
+        "  - Query: 'Following a client choice to terminate optional profile tracking via self-service, how quickly must automated systems stop reading those data fields?'\n"
+        "  - Gold Target: `Consent Governance Policy > Section 3.1` (Revocation of Consent).\n"
+        "  - Result: Top-1 returned `Consent Governance Policy > Section 2.1` (Purpose Limitation) with cosine 0.796; Section 3.1 ranked #2 with cosine 0.778. Paraphrase vocabulary aligned heavily with purpose-bound collection phrasing.\n\n"
         "## Hardware & Performance Profile (Measured)\n"
         "- **FastEmbed Embedding Cold Start**: ~180 ms (lazy initialized into ThreadPoolExecutor)\n"
         "- **FastEmbed Cross-Encoder Cold Start**: ~240 ms\n"
@@ -544,9 +586,9 @@ async def main() -> None:
             failed_gates.append(f"Dev In-Scope Top-1 ({d_t1}) < target 0.70")
 
         # Gate on dev refusal correctness (near-domain and far-domain)
-        if dev_rerank["total_refusal_rate"] < 0.85:
+        if dev_rerank["no_closest_clause_rate"] < 0.85:
             d_ref = dev_rerank["total_refusal_rate"]
-            failed_gates.append(f"Dev Total Refusal ({d_ref}) < target 0.85")
+            failed_gates.append(f"Dev No-Closest-Clause Rate ({d_ref}) < target 0.85")
 
         # Gate on test in-scope Recall@3
         if test_rerank["recall_at_3"] < 0.90:
@@ -554,9 +596,9 @@ async def main() -> None:
             failed_gates.append(f"Test In-Scope Recall@3 ({t_r3}) < target 0.90")
 
         # Gate on test refusal correctness
-        if test_rerank["total_refusal_rate"] < 0.85:
+        if test_rerank["no_closest_clause_rate"] < 0.85:
             t_ref = test_rerank["total_refusal_rate"]
-            failed_gates.append(f"Test Total Refusal ({t_ref}) < target 0.85")
+            failed_gates.append(f"Test No-Closest-Clause Rate ({t_ref}) < target 0.85")
 
         if failed_gates:
             print("CI GATE FAILED:")

@@ -20,7 +20,7 @@ from app.events.bus import publish_event
 from app.models.decision import Decision
 from app.models.policy import Policy, PolicyVersion
 from app.policy.engine import evaluate_policy
-from app.policy.loader import load_policy_from_yaml
+from app.policy.loader import load_policy_from_yaml, validate_policy_declared_sources
 from app.policy.schemas import EvaluationContext
 from app.stubs.injection import scan_injection
 from app.stubs.pii import detect_pii
@@ -61,6 +61,7 @@ class PolicyValidateRequest(BaseModel):
 class PolicyValidateResponse(BaseModel):
     valid: bool
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     rules_count: int = 0
     limits_count: int = 0
 
@@ -209,12 +210,17 @@ async def get_policy_version_detail(
     summary="Validate policy YAML syntax and schema without saving",
     dependencies=[Depends(require_session_or_admin_token)],
 )
-async def validate_policy(req: PolicyValidateRequest) -> PolicyValidateResponse:
+async def validate_policy(
+    req: PolicyValidateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PolicyValidateResponse:
     try:
         parsed = load_policy_from_yaml(req.yaml)
+        source_val = await validate_policy_declared_sources(db, parsed)
         return PolicyValidateResponse(
             valid=True,
             errors=[],
+            warnings=source_val["warnings"],
             rules_count=len(parsed.rules),
             limits_count=len(parsed.limits),
         )
@@ -222,6 +228,7 @@ async def validate_policy(req: PolicyValidateRequest) -> PolicyValidateResponse:
         return PolicyValidateResponse(
             valid=False,
             errors=[str(exc)],
+            warnings=[],
             rules_count=0,
             limits_count=0,
         )

@@ -52,8 +52,8 @@ export function FeatureGridSection() {
     },
     {
       title: "RAG Explanations & Semantic Search",
-      status: "Planned" as const,
-      description: "Local vector search grounding decisions in relevant organizational policy clauses.",
+      status: "Active" as const,
+      description: "Deterministic decision reasons, declared policy basis verification, and topical semantic clause suggestions.",
       icon: <Sparkles className="w-5 h-5 text-amber-400" />,
     },
     {

@@ -321,9 +321,7 @@ async def run_benchmark(num_requests: int = 200) -> dict[str, Any]:
         nonlocal bg_embed_count
         while not stop_rag_bg.is_set():
             with contextlib.suppress(Exception):
-                sample_chunk = [
-                    f"Background policy chunk {bg_embed_count} evaluating data tiers."
-                ]
+                sample_chunk = [f"Background policy chunk {bg_embed_count} evaluating data tiers."]
                 await embed_texts(sample_chunk)
                 bg_embed_count += 1
             await asyncio.sleep(0.03)

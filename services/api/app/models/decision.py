@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
@@ -56,6 +58,35 @@ class Approval(UUIDPrimaryKeyMixin, Base):
     )
     token_consumed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    decision: Mapped["Decision"] = relationship("Decision")
+
+
+class ExplanationSnapshot(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "explanation_snapshots"
+
+    decision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("decisions.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    policy_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("policy_versions.id"), nullable=True, index=True
+    )
+    corpus_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    explainer_version: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="v1.0-offline"
+    )
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    grounded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    why: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    declared_sources: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    suggested_sources: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

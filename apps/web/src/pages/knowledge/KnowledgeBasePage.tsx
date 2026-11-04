@@ -368,9 +368,18 @@ export function KnowledgeBasePage() {
               <Search className="w-4 h-4 text-cyan-400" />
               Ask Your Policies (RAG Inspector)
             </h2>
-            <p className="text-xs text-slate-400 mb-4">
-              Test semantic hybrid retrieval against active policy documents with absolute threshold gating.
+            <p className="text-xs text-slate-400 mb-3">
+              Test semantic hybrid retrieval against active policy documents with similarity and coverage thresholds.
             </p>
+
+            <div className="mb-4 space-y-2">
+              <div className="p-2.5 rounded-lg bg-blue-950/30 border border-blue-500/20 text-[11px] text-blue-300 leading-relaxed">
+                <span className="font-semibold text-blue-200">Standing Note:</span> Retrieval finds related text; it cannot confirm that the clause states the currency, period, role or value you asked about.
+              </div>
+              <div className="p-2 rounded-lg bg-slate-950/50 border border-white/[0.06] text-[10px] text-slate-400">
+                <span className="font-semibold text-slate-300">Notice:</span> Calibrated on the sample corpus only; re-run the eval after ingesting documents.
+              </div>
+            </div>
 
             <div className="space-y-4 mb-4">
               <div>
@@ -476,18 +485,18 @@ export function KnowledgeBasePage() {
                   <div className="p-4 rounded-xl bg-slate-950/60 border border-amber-500/20 text-slate-300 text-xs">
                     <div className="flex items-center gap-2 text-amber-400 font-semibold mb-1">
                       <ShieldAlert className="w-4 h-4" />
-                      No relevant clause (Refusal)
+                      No relevant clause
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
                       No policy clauses in the active corpus satisfied the minimum relevance threshold
-                      (&tau;<sub>v</sub> &ge; {tauVector.toFixed(2)}). The system refuses speculation to ensure
-                      governance integrity.
+                      (&tau;<sub>v</sub> &ge; {tauVector.toFixed(2)}).
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
                     {searchMutation.data.results.map((hit, idx) => {
-                      const isStrong = hit.match_tier === "strong_match";
+                      const isClosest =
+                        hit.match_tier === "closest_clause" || hit.match_tier === "strong_match";
                       return (
                         <div
                           key={hit.chunk_id}
@@ -502,24 +511,24 @@ export function KnowledgeBasePage() {
                                 {hit.section_title || hit.document_title}
                               </span>
                             </div>
-                            {isStrong ? (
+                            {isClosest ? (
                               <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                                 <ShieldCheck className="w-2.5 h-2.5" />
-                                Strong match
+                                Closest clause
                               </span>
                             ) : (
                               <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                 <AlertTriangle className="w-2.5 h-2.5" />
-                                Related, may not answer your question
+                                Weakly related
                               </span>
                             )}
                           </div>
 
-                          {!isStrong && (
+                          {!isClosest && (
                             <div className="mb-2 p-2 rounded-lg bg-amber-950/30 border border-amber-500/20 text-[10px] text-amber-300/90 flex items-start gap-1.5">
                               <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-400" />
                               <span>
-                                <strong>Relevance Warning:</strong> Query-term answerability coverage is below threshold
+                                <strong>Relevance Warning:</strong> Query-term coverage is below threshold
                                 ({hit.coverage_score !== undefined ? (hit.coverage_score * 100).toFixed(0) : "0"}% &lt; 22%).
                                 This clause mentions related concepts but may not directly answer your question.
                               </span>
